@@ -8,7 +8,7 @@ const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
 
-// ! NOVITÀ REAL-TIME: importiamo 'http' (modulo nativo di Node) e Server di socket.io.
+// ! REAL-TIME: importiamo 'http' (modulo nativo di Node) e Server di socket.io.
 // ! Socket.IO ha bisogno di un server HTTP "grezzo" a cui agganciarsi, non può usare
 // ! direttamente l'app Express. Quindi creiamo prima il server HTTP e poi lo passiamo a socket.io.
 const http = require('http');
@@ -26,11 +26,11 @@ const verifyToken = require('./middlewares/authMiddleware');
 // * CREIAMO L'APPLICAZIONE EXPRESS -----------------------------------------------------------------------------------------------------------------------------------------------------------
 const app = express();
 
-// ! NOVITÀ REAL-TIME: creiamo il server HTTP agganciando l'app Express.
+// ! REAL-TIME: creiamo il server HTTP agganciando l'app Express.
 // ! Questo server verrà condiviso sia da Express (per le REST API) che da Socket.IO (per i WebSocket).
 const httpServer = http.createServer(app);
 
-// ! NOVITÀ REAL-TIME: creiamo l'istanza di Socket.IO passandole il server HTTP.
+// ! REAL-TIME: creiamo l'istanza di Socket.IO passandole il server HTTP.
 // ! La configurazione cors è identica a quella di Express: accettiamo solo richieste
 // ! dal nostro frontend in locale.
 const io = new Server(httpServer, {
