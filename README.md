@@ -86,7 +86,7 @@ Di seguito una panoramica visiva delle schermate principali dell'applicazione:
 
 | Modulo | Descrizione Operativa |
 |---|---|
-| **Autenticazione & Sessioni** | Registrazione utenti con normalizzazione email/username, login con hashing bcrypt, token JWT stateless con validità 2h, gestione automatica della sessione con redirect su scadenza token (HTTP 401). |
+| **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token a breve durata (15m) + Refresh Token a lunga durata (7d) persistito su MongoDB con indice TTL per eliminazione automatica. Silent Refresh trasparente gestito dall'interceptor di Axios con coda di richieste (`failedQueue`), rotazione crittografica dei token (Token Rotation con claim `jti`) e revoca su logout: l'utente naviga senza interruzioni e non viene mai disconnesso durante l'uso attivo. |
 | **Controllo Accessi (RBAC)** | Distinzione tra ruolo `user` e `admin`. Gli amministratori possiedono badge visivi dedicati, possono moderare ed eliminare post e commenti altrui, eliminare account e promuovere/declassare ruoli. |
 | **Feed & Gestione Post** | Creazione, modifica ed eliminazione di post con supporto a collegamenti multimediali; visualizzazione feed ordinato per data decrescente; sistema di Like/Unlike con contatore reattivo. |
 | **Commenti Real-Time** | Aggiunta, modifica ed eliminazione commenti. Grazie all'architettura a stanze di Socket.IO, ogni utente con il dettaglio del post aperto visualizza i nuovi commenti all'istante senza ricaricare la pagina. |
@@ -193,18 +193,27 @@ flowchart TD
 
 ## 🗃️ Modello Concettuale dei Dati & ER Diagram
 
-Il database MongoDB `jampulse` è strutturato in 5 collezioni relazionate tramite `ObjectId` Mongoose:
+Il database MongoDB `jampulse` è strutturato in 6 collezioni relazionate tramite `ObjectId` Mongoose:
 
 ```mermaid
 erDiagram
     USER ||--o{ POST : "pubblica (userID)"
     USER ||--o{ COMMENT : "scrive (authorId)"
     USER ||--o{ MESSAGE : "invia (senderID)"
+    USER ||--o{ REFRESH_TOKEN : "possiede (user)"
     USER }o--o{ USER : "follows / following"
     USER }o--o{ POST : "likes"
     USER }o--o{ CHAT : "participants"
     POST ||--o{ COMMENT : "contiene (postId)"
     CHAT ||--o{ MESSAGE : "raccoglie (chatID)"
+
+    REFRESH_TOKEN {
+        ObjectId _id PK
+        string token "unique, required"
+        ObjectId user FK "ref User, required"
+        date expiresAt "indice TTL con auto-cancellazione"
+        date createdAt
+    }
 
     USER {
         ObjectId _id PK
@@ -276,7 +285,7 @@ erDiagram
 
 ## 🔄 Flussi Operativi e Diagrammi di Sequenza
 
-### 1. Autenticazione e Gestione Sessione con JWT
+### 1. Autenticazione e Gestione Sessione Dual-Token
 
 ```mermaid
 sequenceDiagram
@@ -296,9 +305,14 @@ sequenceDiagram
 
     BE ->> BE: user.comparePassword(password) via bcrypt
     alt Credenziali Valide
-        BE ->> BE: jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: '2h', algorithm: 'HS256' })
-        BE -->> FE: 200 OK + { token, user: { id, username, role } }
-        FE ->> FE: Salva token e user in localStorage
+        BE ->> BE: Genera Access Token (15m, HS256)
+        BE ->> BE: Genera Refresh Token (7d, claim univoco jti)
+        BE ->> DB: RefreshToken.create({ token, user, expiresAt })
+        activate DB
+        DB -->> BE: Token di sessione salvato
+        deactivate DB
+        BE -->> FE: 200 OK + { token, accessToken, refreshToken, user }
+        FE ->> FE: Salva accessToken, refreshToken e user in localStorage
         FE -->> Utente: Reindirizzamento alla Home (Feed)
     else Credenziali Errate / Inesistenti
         BE -->> FE: 401 Unauthorized { message: 'Username o password errati' }
@@ -307,22 +321,22 @@ sequenceDiagram
     deactivate BE
 ```
 
-### 2. Creazione Post e Autorizzazione Stateless
+### 2. Creazione Post, Scadenza Access Token e Silent Refresh Trasparente
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Utente as Utente Autenticato
-    participant FE as React SPA
+    participant FE as React SPA (Axios Interceptor)
     participant AuthMW as authMiddleware (verifyToken)
-    participant BE as PostController
+    participant BE as PostController / AuthController
     participant DB as MongoDB
 
     Utente ->> FE: Compila form e preme "Pubblica"
-    FE ->> AuthMW: POST /api/v1/posts (Header: Bearer <token>)
+    FE ->> AuthMW: POST /api/v1/posts (Header: Bearer <accessToken>)
     activate AuthMW
     AuthMW ->> AuthMW: jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
-    alt Token Valido
+    alt Token Valido (entro i 15m)
         AuthMW ->> BE: Inietta req.user = { id, role } e chiama next()
         deactivate AuthMW
         activate BE
@@ -333,11 +347,27 @@ sequenceDiagram
         BE -->> FE: 201 Created + Post popolato
         FE -->> Utente: Aggiornamento immediato del feed
         deactivate BE
-    else Token Scaduto / Manomesso
+    else Access Token Scaduto (dopo 15m)
         activate AuthMW
-        AuthMW -->> FE: 401 Unauthorized { code: 'TOKEN_EXPIRED' | 'INVALID_TOKEN' }
+        AuthMW -->> FE: 401 Unauthorized { code: 'TOKEN_EXPIRED' }
         deactivate AuthMW
-        FE ->> FE: Axios Interceptor: pulizia localStorage e redirect su /login
+        Note over FE: L'interceptor di risposta cattura il 401
+        FE ->> BE: POST /api/v1/auth/refresh { refreshToken }
+        activate BE
+        BE ->> DB: RefreshToken.findOne({ token }) & verifica firma
+        BE ->> DB: Token Rotation: elimina vecchio token, salva nuova coppia
+        BE -->> FE: 200 OK + { accessToken, refreshToken }
+        deactivate BE
+        FE ->> FE: Aggiorna i token nel localStorage
+        FE ->> AuthMW: Riprova in automatico POST /api/v1/posts (Header: Bearer <nuovo_token>)
+        activate AuthMW
+        AuthMW ->> BE: Inietta req.user e chiama next()
+        deactivate AuthMW
+        activate BE
+        BE ->> DB: Post.create(...)
+        BE -->> FE: 201 Created + Post popolato
+        deactivate BE
+        FE -->> Utente: Post pubblicato con successo senza alcun redirect o interruzione!
     end
 ```
 
@@ -433,7 +463,9 @@ In caso di errore, il backend restituisce un payload JSON standardizzato:
 | Metodo | Endpoint | Accesso | Descrizione | Request Body | Risposte HTTP |
 |---|---|---|---|---|---|
 | `POST` | `/register` | Pubblico | Registra un nuovo musicista | `{ email, username, password, instruments?, genres? }` | `201` Created, `400` Dati mancanti/duplicati, `500` Errore Server |
-| `POST` | `/login` | Pubblico | Autentica l'utente e genera JWT | `{ username, password }` | `200` OK + `{ token, user }`, `401` Credenziali errate, `400` Campi vuoti |
+| `POST` | `/login` | Pubblico | Autentica l'utente ed emette Dual-Token | `{ username, password }` | `200` OK + `{ token, accessToken, refreshToken, user }`, `401` Credenziali errate, `400` Campi vuoti |
+| `POST` | `/refresh` | Pubblico | Rinnovo trasparente Access Token con Token Rotation | `{ refreshToken }` | `200` OK + `{ token, accessToken, refreshToken }`, `400` Token mancante, `401` Scaduto o revocato |
+| `POST` | `/logout` | Pubblico / Autenticato | Revoca la sessione cancellando il Refresh Token dal DB | `{ refreshToken? }` | `200` OK + `{ message }`, `500` Errore Server |
 
 ### 2. Utenti & Social Graph — `/api/v1/users`
 | Metodo | Endpoint | Accesso | Descrizione | Note e Risposte |
@@ -496,9 +528,13 @@ JamPulse integra controlli difensivi a più livelli:
 1. **Protezione Crittografica delle Password**:
    - Algoritmo `bcryptjs` con fattore di costo a 10 round.
    - Nessuna password in chiaro viene memorizzata o restituita nelle risposte API (uso metodico di `.select('-password')` nelle query Mongoose).
-2. **Mitigazione Algoritmi Deboli nei JWT**:
-   - Nella verifica del token viene esplicitamente forzato l'algoritmo sicuro: `{ algorithms: ['HS256'] }`, neutralizzando attacchi di tipo *None-algorithm* o downgrade dell'algoritmo crittografico.
-   - Il token ha scadenza configurabile (default: `2h`).
+2. **Architettura Dual-Token (Access Token + Refresh Token)**:
+   - **Access Token (15 minuti)**: a vita breve, stateless, inviato nell'header `Authorization: Bearer <token>`. La breve durata minimizza la finestra di vulnerabilità in caso di intercettazione.
+   - **Refresh Token (7 giorni)**: a vita più lunga, generato con claim crittografico univoco (`jti: crypto.randomUUID()`) per prevenire collisioni e salvato nel database MongoDB.
+   - **Algoritmo Crittografico Forzato**: sia l'Access Token che il Refresh Token forzano esplicitamente l'algoritmo sicuro `{ algorithms: ['HS256'] }`, neutralizzando attacchi di tipo *None-algorithm*.
+   - **Token Rotation (RFC 6749 / OAuth2 Best Practice)**: a ogni operazione di refresh, il vecchio Refresh Token viene immediatamente invalidato e rimpiazzato con uno nuovo. In questo modo ciascun token è rigorosamente monouso, bloccando attacchi di tipo *Replay Attack*.
+   - **Indice TTL di MongoDB**: i token scaduti vengono eliminati fisicamente in automatico dal database grazie all'indice Time-To-Live (`expireAfterSeconds: 0`), senza richiedere cron job esterni.
+   - **Revoca della Sessione al Logout**: l'endpoint `/api/v1/auth/logout` cancella il token dal DB, disabilitando istantaneamente la possibilità di ottenere nuovi token per quel dispositivo.
 3. **Role-Based Access Control (RBAC)**:
    - Nel payload del JWT viene incluso il ruolo (`'user'` o `'admin'`).
    - Il middleware `requireRole('admin')` blocca accessi non autorizzati restituendo `403 Forbidden` (`FORBIDDEN`).
@@ -506,8 +542,11 @@ JamPulse integra controlli difensivi a più livelli:
    - È presente un controllo che impedisce a un amministratore di declassare o eliminare per sbaglio il proprio account da endpoint dedicati.
 4. **Protezione da Auto-Privilege Escalation**:
    - L'endpoint di registrazione (`authController.register`) impone server-side `role: 'user'`, ignorando qualsiasi tentativo malevolo di passare `"role": "admin"` nel body della richiesta.
-5. **Axios Response Interceptors su 401**:
-   - Se il token scade durante la navigazione, il frontend intercetta la risposta HTTP 401, elimina le chiavi `token` e `user` da `localStorage` e reindirizza in modo sicuro alla pagina `/login`.
+5. **Silent Refresh Interceptor Trasparente con Coda Concorrente**:
+   - L'interceptor globale di Axios (`frontend/src/axios.js`) rileva gli errori HTTP 401 (`TOKEN_EXPIRED`).
+   - Gestisce la concorrenza tramite il **Request Queue Pattern**: se più componenti effettuano richieste parallele mentre il token scade, solo la prima effettua la chiamata a `/auth/refresh`, mentre le altre attendono nella `failedQueue`.
+   - Ricevuto il nuovo token, tutte le richieste in sospeso vengono rieseguite in automatico: **l'utente naviga senza interruzioni e non viene mai buttato fuori durante l'uso attivo**.
+   - Solo nel caso in cui anche il Refresh Token risulti scaduto (oltre 7 giorni di totale inattività) o revocato, la sessione viene azzerata con redirect a `/login`.
 
 ---
 
@@ -531,6 +570,7 @@ JamPulse/
 │   │   ├── Comment.js                     # Schema commento collegato a Post e User
 │   │   ├── Message.js                     # Schema messaggio (chatID, senderID, content)
 │   │   ├── Post.js                        # Schema post (userID, content, media, likes)
+│   │   ├── RefreshToken.js                # Schema refresh token con indice TTL automatico
 │   │   └── User.js                        # Schema utente (role, bcrypt hook, followers)
 │   ├── routes/                            # Mappatura endpoint RESTful
 │   │   ├── authRoute.js
@@ -702,8 +742,11 @@ Il file di configurazione `backend/.env` controlla i parametri operativi del ser
 | `PORT` | Sì | `4000` | Porta TCP su cui resta in ascolto il server Node.js HTTP/WebSocket. |
 | `MONGO_URI` | Sì | `mongodb://localhost:27017/jampulse` | Stringa di connessione a MongoDB (locale o cluster remoto come MongoDB Atlas). In Docker usare `mongodb://mongo:27017/jampulse`. |
 | `JWT_SECRET` | Sì | *stringa casuale complessa* | Chiave crittografica segreta per generare e verificare la firma dei token JWT (HS256). |
+| `JWT_ACCESS_EXPIRES_IN` | No | `15m` | Tempo di validità dell'Access Token a breve durata (es. `15m`, `30m`, `1h`). |
+| `REFRESH_TOKEN_SECRET` | No | *fallback su JWT_SECRET + _refresh* | Chiave crittografica dedicata alla firma dei Refresh Token. |
+| `JWT_REFRESH_EXPIRES_IN` | No | `7d` | Tempo di validità del Refresh Token a lunga durata (es. `7d`, `30d`). |
 | `CORS_ORIGIN` | No | `http://localhost:5173` | Origine HTTP autorizzata a effettuare chiamate cross-origin (`*` o indirizzo specifico). |
-| `JWT_EXPIRES_IN` | No | `2h` | Tempo di validità dei token di sessione emessi al login (es. `2h`, `7d`). |
+| `JWT_EXPIRES_IN` | No | `2h` | Parametro legacy di fallback per la scadenza dell'Access Token. |
 
 ---
 

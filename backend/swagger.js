@@ -175,7 +175,7 @@ const options = {
                 post: {
                     tags: ["Auth"],
                     summary: "Login utente",
-                    description: "Verifica username e password e restituisce un token JWT valido per 2 ore.",
+                    description: "Verifica username e password e restituisce un Access Token (JWT) e un Refresh Token.",
                     requestBody: {
                         required: true,
                         content: {
@@ -199,11 +199,14 @@ const options = {
                                         type: "object",
                                         properties: {
                                             token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5..." },
+                                            accessToken: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5..." },
+                                            refreshToken: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5..." },
                                             user: {
                                                 type: "object",
                                                 properties: {
                                                     id: { type: "string" },
-                                                    username: { type: "string" }
+                                                    username: { type: "string" },
+                                                    role: { type: "string", example: "user" }
                                                 }
                                             }
                                         }
@@ -215,6 +218,86 @@ const options = {
                             description: "Non autorizzato - Credenziali errate",
                             content: {
                                 "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Username o password errati" } } } }
+                            }
+                        },
+                        500: { description: "Errore interno del server" }
+                    }
+                }
+            },
+            "/api/v1/auth/refresh": {
+                post: {
+                    tags: ["Auth"],
+                    summary: "Rinnovo Access Token",
+                    description: "Riceve un Refresh Token valido e restituisce una nuova coppia di Access Token e Refresh Token (con rotazione automatica).",
+                    requestBody: {
+                        required: true,
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    required: ["refreshToken"],
+                                    properties: {
+                                        refreshToken: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5..." }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        200: {
+                            description: "Token rinnovati con successo",
+                            content: {
+                                "application/json": {
+                                    schema: {
+                                        type: "object",
+                                        properties: {
+                                            token: { type: "string" },
+                                            accessToken: { type: "string" },
+                                            refreshToken: { type: "string" }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        400: {
+                            description: "Refresh token mancante",
+                            content: {
+                                "application/json": { schema: { type: "object", properties: { message: { type: "string" }, code: { type: "string", example: "REFRESH_TOKEN_MISSING" } } } }
+                            }
+                        },
+                        401: {
+                            description: "Refresh token non valido o scaduto",
+                            content: {
+                                "application/json": { schema: { type: "object", properties: { message: { type: "string" }, code: { type: "string", example: "REFRESH_TOKEN_EXPIRED" } } } }
+                            }
+                        },
+                        500: { description: "Errore interno del server" }
+                    }
+                }
+            },
+            "/api/v1/auth/logout": {
+                post: {
+                    tags: ["Auth"],
+                    summary: "Logout utente",
+                    description: "Revoca il Refresh Token invalidando la sessione attiva nel database.",
+                    requestBody: {
+                        required: false,
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    properties: {
+                                        refreshToken: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5..." }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        200: {
+                            description: "Logout effettuato con successo",
+                            content: {
+                                "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Logout effettuato con successo" } } } }
                             }
                         },
                         500: { description: "Errore interno del server" }

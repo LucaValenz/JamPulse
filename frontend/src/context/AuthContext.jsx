@@ -1,44 +1,66 @@
-// ! Questo file contiene il contesto di autenticazione per l'applicazione React. Fornisce lo stato dell'utente autenticato e le funzioni per gestire il login e il logout.
-// ! Ad esempio, la sidebar e la navbar possono utilizzare questo contesto per mostrare informazioni sull'utente autenticato o per nascondere/mostrare determinate funzionalità in base allo stato di autenticazione.
+// ====================================================================================================================
+// CONTESTO GLOBALE DI AUTENTICAZIONE (AuthContext.jsx)
+// ====================================================================================================================
+// Questo file fornisce uno stato condiviso a tutta l'applicazione React riguardante:
+// - L'utente attualmente autenticato ('user')
+// - Il token di sessione attivo ('token')
+// - Lo stato di amministratore ('isAdmin')
+// - Le funzioni per eseguire Login, Logout e Registrazione
+//
+// Grazie al Context API di React, qualsiasi componente dell'albero (es. Sidebar, Navbar, pagine protette)
+// può accedere a queste informazioni semplicemente invocando il custom hook 'useAuth()'.
+// ====================================================================================================================
 
 import { createContext, useContext, useState } from "react";
-import { login as loginService, register as registerService } from "../services/authServices";
+import { login as loginService, register as registerService, logoutService } from "../services/authServices";
 
-// 1. Creiamo il Context (il "contenitore vuoto")
+// 1. Creazione dell'oggetto Context (il contenitore globale dei dati)
 const AuthContext = createContext(null);
 
-// 2. Il Provider è il componente che "avvolge" l'app e mette i dati a disposizione
+// 2. AuthProvider: componente Provider che avvolge l'intera applicazione in App.jsx
 export function AuthProvider({ children }) {
-    // Leggiamo subito dal localStorage se c'era già una sessione
-    const [user, setUser] = useState(() => { // ! useState serve per creare uno stato locale per l'utente autenticato. Inizialmente, cerca di leggere l'utente dal localStorage. Se trova un utente salvato, lo imposta come stato iniziale; altrimenti, imposta lo stato iniziale a null.
-        const saved = localStorage.getItem('user'); // ! localStorage.getItem('user') legge dal localStorage del browser la chiave 'user'.
-        return saved ? JSON.parse(saved) : null; // ! Se trova un utente salvato, lo converte da stringa JSON a oggetto JavaScript usando JSON.parse(saved). Se non trova nulla, ritorna null.
+    // Inizializzazione dello stato 'user':
+    // All'avvio dell'app (o dopo un refresh della pagina F5), controlliamo subito se nel localStorage
+    // era già presente un profilo utente salvato, così da ripristinare la sessione all'istante.
+    const [user, setUser] = useState(() => {
+        const saved = localStorage.getItem('user');
+        return saved ? JSON.parse(saved) : null;
     });
-    const [token, setToken] = useState(() => localStorage.getItem('token')); // ! useState serve per creare uno stato locale per il token di autenticazione. Inizialmente, cerca di leggere il token dal localStorage. Se trova un token salvato, lo imposta come stato iniziale; altrimenti, imposta lo stato iniziale a null.
 
-    // Funzioni per gestire il login, il logout e la registrazione
+    // Inizializzazione dello stato 'token' leggendo l'Access Token dal localStorage
+    const [token, setToken] = useState(() => localStorage.getItem('token'));
 
+    /**
+     * Esegue il login tramite authServices.
+     * Salva l'utente nello stato React e nel localStorage per renderlo persistente tra i reload di pagina.
+     */
     async function login(credentials) {
-        const data = await loginService(credentials); // chiama il service che fa la POST
+        const data = await loginService(credentials);
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
-        // il token lo salva già authServices.js
         return data;
     }
 
+    /**
+     * Esegue la registrazione di un nuovo utente delegando la chiamata API a authServices.
+     */
     async function register(userData) {
         return await registerService(userData);
     }
 
-    function logout() {
+    /**
+     * Esegue il logout completo:
+     * 1. Resetta lo stato locale di React (user e token a null).
+     * 2. Invoca logoutService(), che revoca il Refresh Token su MongoDB e ripulisce il localStorage.
+     */
+    async function logout() {
         setUser(null);
         setToken(null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        await logoutService();
     }
 
-    // Proprietà di comodo: true se l'utente loggato è un amministratore
+    // Proprietà di comodo (booleana): true se l'utente possiede il ruolo speciale 'admin'
     const isAdmin = user?.role === 'admin';
 
     return (
@@ -48,7 +70,7 @@ export function AuthProvider({ children }) {
     );
 }
 
-// 3. Hook custom per usare il context in modo comodo
+// 3. Custom Hook per consumare il contesto facilmente: const { user, logout, isAdmin } = useAuth();
 export function useAuth() {
     return useContext(AuthContext);
 }
