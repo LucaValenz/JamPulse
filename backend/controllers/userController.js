@@ -99,7 +99,11 @@ async function getUserById(req, res) {
 
         res.json(user)
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel recupero dell\'utente', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE GET USER BY ID:', error)
+        res.status(500).json({ message: 'Errore nel recupero dell\'utente' })
     }
 }
 
@@ -117,7 +121,11 @@ async function getPosts(req, res) {
             .sort({ createdAt: -1 });
         res.json(posts)
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel recupero dei post', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE GET USER POSTS:', error)
+        res.status(500).json({ message: 'Errore nel recupero dei post' })
     }
 }
 
@@ -160,7 +168,11 @@ async function follow(req, res) {
 
         res.json({ message: 'Ora stai seguendo questo utente' })
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel follow', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE FOLLOW:', error)
+        res.status(500).json({ message: 'Errore nel follow' })
     }
 }
 
@@ -186,7 +198,11 @@ async function unfollow(req, res) {
 
         res.json({ message: 'Hai smesso di seguire questo utente' })
     } catch (error) {
-        res.status(500).json({ message: 'Errore nell\'unfollow', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE UNFOLLOW:', error)
+        res.status(500).json({ message: 'Errore nell\'unfollow' })
     }
 }
 
@@ -210,7 +226,11 @@ async function deleteUserByAdmin(req, res) {
 
         res.json({ message: `Utente ${userToDelete.username} eliminato con successo dall'amministratore` })
     } catch (error) {
-        res.status(500).json({ message: 'Errore nell\'eliminazione dell\'utente', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE DELETE USER BY ADMIN:', error)
+        res.status(500).json({ message: 'Errore nell\'eliminazione dell\'utente' })
     }
 }
 
@@ -243,7 +263,11 @@ async function updateUserRole(req, res) {
 
         res.json({ message: `Ruolo aggiornato a ${role}`, user: updatedUser })
     } catch (error) {
-        res.status(500).json({ message: 'Errore nell\'aggiornamento del ruolo utente', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID utente non valido' })
+        }
+        console.error('ERRORE UPDATE USER ROLE:', error)
+        res.status(500).json({ message: 'Errore nell\'aggiornamento del ruolo utente' })
     }
 }
 

@@ -46,6 +46,8 @@ export default function PostCard({ post, onDelete }) {
             onDelete?.(post._id); // onDelete?.() = lo chiama solo se è stato passato
         } catch (err) {
             console.error("Errore nell'eliminazione del post:", err);
+            const msg = err.response?.data?.message || 'Impossibile eliminare il post. Riprova più tardi.';
+            alert(msg);
         }
     }
 

@@ -122,6 +122,8 @@ export default function PostDetail() {
             setCommentText('');
         } catch (err) {
             console.error('Errore nell\'invio del commento:', err);
+            const msg = err.response?.data?.message || 'Impossibile inviare il commento. Riprova.';
+            alert(msg);
         }
     }
 
@@ -133,6 +135,8 @@ export default function PostDetail() {
             setComments(prev => prev.filter(c => c._id !== commentId));
         } catch (err) {
             console.error("Errore nell'eliminazione del commento:", err);
+            const msg = err.response?.data?.message || 'Impossibile eliminare il commento.';
+            alert(msg);
         }
     }
 

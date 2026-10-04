@@ -41,12 +41,14 @@ export default function CreatePost() {
             // Il service aggiunge automaticamente il token JWT nell'header
             // grazie all'interceptor configurato in axios.js.
             // Il backend legge l'ID dell'autore dal token, non dal body.
-            await createPost({ content, media });
+            await createPost({ content: content.trim(), media: media.trim() });
 
             // Post creato con successo: torniamo alla Home per vederlo nel feed
             navigate('/');
         } catch (err) {
-            setError('Errore durante la pubblicazione. Riprova.');
+            // Mostriamo il messaggio specifico inviato dal backend (es. validazione) o un fallback chiaro
+            const errorMessage = err.response?.data?.message || 'Errore durante la pubblicazione. Riprova.';
+            setError(errorMessage);
             console.error('Errore nella creazione del post:', err);
         } finally {
             setLoading(false);

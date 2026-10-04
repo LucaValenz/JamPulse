@@ -36,7 +36,12 @@ async function getPostById(req, res) {
 
         res.json(post)
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel recupero del post', error })
+        // Se l'ID passato non è un ObjectId MongoDB valido
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID post non valido' })
+        }
+        console.error('ERRORE GET POST BY ID:', error)
+        res.status(500).json({ message: 'Errore nel recupero del post' })
     }
 }
 
@@ -48,10 +53,15 @@ async function createPost(req, res) {
     try {
         const { content, media } = req.body
 
+        // Validazione essenziale: il contenuto del post non può essere vuoto
+        if (!content || !content.trim()) {
+            return res.status(400).json({ message: 'Il contenuto del post è obbligatorio' })
+        }
+
         // Creiamo il documento Post con i dati del body e l'ID dell'autore dal token
         const newPost = new Post({
             userID: req.user.id,
-            content,
+            content: content.trim(),
             media: media || '' // media è opzionale: se non arriva dal client usiamo stringa vuota
         })
 
@@ -59,7 +69,8 @@ async function createPost(req, res) {
 
         res.status(201).json(newPost)
     } catch (error) {
-        res.status(500).json({ message: 'Errore nella creazione del post', error })
+        console.error('ERRORE CREATE POST:', error)
+        res.status(500).json({ message: 'Errore nella creazione del post' })
     }
 }
 
@@ -70,6 +81,11 @@ async function createPost(req, res) {
 async function updatePost(req, res) {
     try {
         const { content, media } = req.body
+
+        // Validazione contenuto
+        if (!content || !content.trim()) {
+            return res.status(400).json({ message: 'Il contenuto del post non può essere vuoto' })
+        }
 
         // Cerchiamo prima il post per controllare chi è l'autore
         const post = await Post.findById(req.params.id)
@@ -85,13 +101,17 @@ async function updatePost(req, res) {
         // Aggiorniamo solo i campi modificabili, non l'autore
         const updatedPost = await Post.findByIdAndUpdate(
             req.params.id,
-            { content, media },
+            { content: content.trim(), media },
             { new: true } // restituisce il documento aggiornato, non quello vecchio
         )
 
         res.json(updatedPost)
     } catch (error) {
-        res.status(500).json({ message: 'Errore nella modifica del post', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID post non valido' })
+        }
+        console.error('ERRORE UPDATE POST:', error)
+        res.status(500).json({ message: 'Errore nella modifica del post' })
     }
 }
 
@@ -116,7 +136,11 @@ async function deletePost(req, res) {
 
         res.json({ message: 'Post eliminato con successo' })
     } catch (error) {
-        res.status(500).json({ message: 'Errore nell\'eliminazione del post', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID post non valido' })
+        }
+        console.error('ERRORE DELETE POST:', error)
+        res.status(500).json({ message: 'Errore nell\'eliminazione del post' })
     }
 }
 
@@ -152,7 +176,11 @@ async function toggleLike(req, res) {
             return res.json({ message: 'Like aggiunto', liked: true })
         }
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel like', error })
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID post non valido' })
+        }
+        console.error('ERRORE TOGGLE LIKE:', error)
+        res.status(500).json({ message: 'Errore nel like' })
     }
 }
 

@@ -132,6 +132,23 @@ app.use('/api/v1/users', userRoute); // ! questo serve per utilizzare le rotte d
 app.use('/api/v1/posts/:id/comments', commentRoute); // ! questo serve per utilizzare le rotte dei commenti
 app.use('/api/v1/chats/:id/messages', messageRoute); // ! questo serve per utilizzare le rotte dei messaggi
 
+// * GESTIONE ERRORI ED ENDPOINT NON TROVATI --------------------------------------------------------------------------------------------------------------------------------------------------
+// Middleware per intercettare qualsiasi rotta non definita nel server e restituire una risposta JSON coerente (404 Not Found)
+app.use((req, res) => {
+    res.status(404).json({
+        message: `Endpoint non trovato: ${req.method} ${req.originalUrl}`
+    });
+});
+
+// Middleware globale per la gestione centralizzata degli errori Express (a 4 parametri)
+// Evita che eccezioni non catturate facciano crashare il processo o restituiscano pagine HTML al client
+app.use((err, req, res, next) => {
+    console.error('⚠️ [ERRORE NON GESTITO SERVER]:', err);
+    res.status(err.status || 500).json({
+        message: err.message || 'Errore interno del server'
+    });
+});
+
 // * CONNESSIONE AL DATABASE E AVVIO DEL SERVER ----------------------------------------------------------------------------------------------------------------------------------------------
 mongoose.connect(process.env.MONGO_URI) // ! questo serve per connettersi al database MongoDB utilizzando l'URI definito nelle variabili d'ambiente
     .then(() => {

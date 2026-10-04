@@ -99,48 +99,82 @@ export default function Login() {
         setRegisterData(prev => ({ ...prev, genres: event.target.value }));
     };
 
+    // Helper per estrarre in modo chiaro e leggibile il messaggio di errore da una risposta Axios
+    const extractErrorMessage = (err, defaultMsg) => {
+        // Caso 1: il server non risponde o la connessione di rete è fallita
+        if (!err.response) {
+            return 'Impossibile contattare il server. Verifica la connessione o che il backend sia attivo.';
+        }
+        // Caso 2: la rotta richiesta non esiste (404 Not Found)
+        if (err.response.status === 404) {
+            return 'Servizio non trovato (404). Verifica la configurazione del server.';
+        }
+        // Caso 3: il server ha restituito un messaggio di errore strutturato in JSON
+        if (err.response.data && err.response.data.message) {
+            return err.response.data.message;
+        }
+        return defaultMsg;
+    };
+
     // -------------------------------------------------------
     // Submit handlers 
-    //Gestisce l'invio del form di Login
+    // Gestisce l'invio del form di Login
     const handleLogin = async (event) => {
         event.preventDefault(); // Evita il ricaricamento della pagina al momento del submit
-        console.log('Dati login pronti da inviare:', loginData); // utile per verificare
-        setError('') // Resetta eventuali messaggi di errore mostrati in precedenza
+        setError(''); // Resetta eventuali messaggi di errore mostrati in precedenza
+
+        // Validazione preventiva lato client: entrambi i campi sono obbligatori
+        if (!loginData.username.trim() || !loginData.password.trim()) {
+            setError('Inserisci sia username che password.');
+            return;
+        }
+
         try {
             // Richiama la funzione dal Context per autenticare l'utente e salvare il token
-            await login(loginData)
-            console.log('Login effettuato con successo')
+            await login({
+                username: loginData.username.trim(),
+                password: loginData.password
+            });
             // Reindirizza l'utente alla rotta principale (Home) dopo l'accesso
-            navigate('/')
-        } catch (error) {
-            // Cattura eventuali errori (es. credenziali errate) e mostra l'alert nella UI
-            // ! Cerchiamo il messaggio dal backend. Se non c'è (es. server spento), usiamo un messaggio generico
-            setError(error.response?.data?.message || 'Errore durante il login')
+            navigate('/');
+        } catch (err) {
+            // Cattura l'errore (401 credenziali errate, 404 endpoint non trovato, o server spento)
+            const message = extractErrorMessage(err, 'Errore durante il login');
+            setError(message);
         }
     };
 
     // Gestisce l'invio del form di Registrazione con auto-login
     const handleRegister = async (event) => {
-        event.preventDefault();// Evita il ricaricamento della pagina al momento del submit
-        console.log('Dati registrazione pronti da inviare:', registerData); // utile per verificare
-        setError('')// Resetta eventuali messaggi di errore
+        event.preventDefault(); // Evita il ricaricamento della pagina al momento del submit
+        setError(''); // Resetta eventuali messaggi di errore
+
+        // Validazione preventiva lato client
+        if (!registerData.email.trim() || !registerData.username.trim() || !registerData.password.trim()) {
+            setError('Email, username e password sono obbligatori.');
+            return;
+        }
+
         try {
             // Effettua la chiamata al backend per creare il nuovo utente nel database
-            await register(registerData)
-            console.log('Registrazione effettuato con successo')
-            // Esegue il Login automatico subito dopo la registrazione.
-            // Estrapoliamo solo username e password dall'oggetto registerData
+            await register({
+                ...registerData,
+                email: registerData.email.trim(),
+                username: registerData.username.trim()
+            });
+
+            // Esegue il Login automatico subito dopo la registrazione
             await login({
-                username: registerData.username,
+                username: registerData.username.trim(),
                 password: registerData.password
-            })
-            console.log('Login effettuato con successo')
+            });
+
             // Reindirizza il nuovo utente (ora loggato) alla Home
-            navigate('/')
-        } catch (error) {
-            // Cattura errori (es. email o username già esistenti) e mostra l'alert nella UI
-            // ! Cerchiamo il messaggio dal backend. Se non c'è (es. server spento), usiamo un messaggio generico
-            setError(error.response?.data?.message || 'Errore durante la registrazione')
+            navigate('/');
+        } catch (err) {
+            // Cattura errori (es. duplicati 400, o server offline)
+            const message = extractErrorMessage(err, 'Errore durante la registrazione');
+            setError(message);
         }
     };
 

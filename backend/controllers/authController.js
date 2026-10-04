@@ -10,9 +10,14 @@ async function register(req, res) {
         // Estrazione delle variabili dall'oggetto req.body inviato dal frontend.
         const { email, username, password, instruments, genres } = req.body
 
+        // Validazione essenziale: verifichiamo che i campi obbligatori non siano vuoti
+        if (!email || !username || !password || !email.trim() || !username.trim() || !password.trim()) {
+            return res.status(400).json({ message: 'Email, username e password sono obbligatori' })
+        }
+
         // Cerchiamo nel DB se esiste già un utente con questa email OPPURE questo username.
         const userExist = await User.findOne({
-            $or: [{ email }, { username }]
+            $or: [{ email: email.trim().toLowerCase() }, { username: username.trim() }]
         })
 
         // Se userExist contiene qualcosa (non è null), fermiamo l'esecuzione e restituiamo un errore 400 (Bad Request)
@@ -24,11 +29,11 @@ async function register(req, res) {
         // In questo modo, anche se un utente malintenzionato tentasse di inviare "role": "admin"
         // nel body della richiesta HTTP, non potrà mai auto-assegnarsi privilegi amministrativi.
         const newUser = new User({ 
-            email, 
-            username, 
+            email: email.trim().toLowerCase(), 
+            username: username.trim(), 
             password, 
-            instruments, 
-            genres,
+            instruments: instruments || [], 
+            genres: genres || [],
             role: 'user' 
         })
 
@@ -50,8 +55,9 @@ async function register(req, res) {
         })
 
     } catch (error) {
+        console.error('ERRORE REGISTRAZIONE:', error);
         // Se Mongoose fallisce catturiamo l'errore e restituiamo un 500 (Internal Server Error)
-        res.status(500).json({ message: 'Errore nella registrazione utente', error })
+        res.status(500).json({ message: 'Errore nella registrazione utente' })
     }
 }
 
@@ -61,8 +67,13 @@ async function login(req, res) {
         // Recuperiamo username e password dal body della richiesta
         const { username, password } = req.body
 
+        // Validazione essenziale: controlliamo che username e password siano forniti
+        if (!username || !password || !username.trim()) {
+            return res.status(400).json({ message: 'Inserisci username e password' })
+        }
+
         // Cerchiamo nel database un utente con l'username inserito
-        const user = await User.findOne({ username })
+        const user = await User.findOne({ username: username.trim() })
 
         // Se l'utente non viene trovato nel database mandiamo la risposta con un messaggio generico
         if (!user) {
@@ -106,8 +117,8 @@ async function login(req, res) {
 
         // Se c'è un problema tecnico rispondiamo con l'errore
     } catch (error) {
-        console.log('ERRORE LOGIN:', error);
-        res.status(500).json({ message: 'Errore nel Login', error })
+        console.error('ERRORE LOGIN:', error);
+        res.status(500).json({ message: 'Errore durante il login' })
     }
 }
 

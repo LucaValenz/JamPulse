@@ -18,8 +18,9 @@ async function getMessages(req, res) {
 
         // Controllo privacy: assicuriamoci che l'utente loggato (req.user.id) 
         // faccia effettivamente parte dell'array dei partecipanti di questa chat.
-        // Non vogliamo che qualcuno legga i messaggi di altre persone!
-        if (!chat.participants.includes(req.user.id)) {
+        // Usiamo .some e .toString() perché participants contiene ObjectId e req.user.id è una stringa
+        const isParticipant = chat.participants.some(p => p.toString() === req.user.id);
+        if (!isParticipant) {
             return res.status(403).json({ message: 'Non hai il permesso di leggere questa chat' });
         }
 
@@ -33,7 +34,11 @@ async function getMessages(req, res) {
 
         res.json(messages);
     } catch (error) {
-        res.status(500).json({ message: 'Errore nel recupero dei messaggi', error });
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID chat non valido' });
+        }
+        console.error('ERRORE GET MESSAGES:', error);
+        res.status(500).json({ message: 'Errore nel recupero dei messaggi' });
     }
 }
 
@@ -51,12 +56,24 @@ async function createMessage(req, res) {
             return res.status(400).json({ message: 'Il contenuto del messaggio è obbligatorio' });
         }
 
+        // Verifichiamo prima che la chat di destinazione esista
+        const chat = await Chat.findById(currentChatId);
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat non trovata' });
+        }
+
+        // Verifichiamo che l'utente loggato sia effettivamente un partecipante della chat
+        const isParticipant = chat.participants.some(p => p.toString() === req.user.id);
+        if (!isParticipant) {
+            return res.status(403).json({ message: 'Non hai il permesso di inviare messaggi in questa chat' });
+        }
+
         // Creiamo fisicamente il documento del messaggio nel DB.
         // Il mittente (senderID) viene preso dal token di autenticazione in modo sicuro.
         const newMessage = await Message.create({
             chatID: currentChatId,
             senderID: req.user.id,
-            content
+            content: content.trim()
         });
 
         // Aggiorniamo il timestamp 'updatedAt' della Chat.
@@ -69,7 +86,11 @@ async function createMessage(req, res) {
 
         res.status(201).json(newMessage);
     } catch (error) {
-        res.status(500).json({ message: 'Errore nell\'invio del messaggio', error });
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'ID chat non valido' });
+        }
+        console.error('ERRORE CREATE MESSAGE:', error);
+        res.status(500).json({ message: 'Errore nell\'invio del messaggio' });
     }
 }
 
