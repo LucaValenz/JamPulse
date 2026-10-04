@@ -190,6 +190,63 @@ async function unfollow(req, res) {
     }
 }
 
+// DELETE /users/:id (SOLO ADMIN)
+// Permette a un amministratore di eliminare un profilo utente dalla piattaforma.
+async function deleteUserByAdmin(req, res) {
+    try {
+        const targetUserId = req.params.id
+
+        // Preveniamo che un amministratore elimini se stesso per sbaglio
+        if (targetUserId === req.user.id) {
+            return res.status(400).json({ message: 'Non puoi eliminare il tuo stesso account amministratore da qui' })
+        }
+
+        const userToDelete = await User.findById(targetUserId)
+        if (!userToDelete) {
+            return res.status(404).json({ message: 'Utente non trovato' })
+        }
+
+        await User.findByIdAndDelete(targetUserId)
+
+        res.json({ message: `Utente ${userToDelete.username} eliminato con successo dall'amministratore` })
+    } catch (error) {
+        res.status(500).json({ message: 'Errore nell\'eliminazione dell\'utente', error })
+    }
+}
+
+// PATCH /users/:id/role (SOLO ADMIN)
+// Permette a un amministratore di modificare il ruolo di un utente (es. promuovere a 'admin' o declassare a 'user').
+async function updateUserRole(req, res) {
+    try {
+        const targetUserId = req.params.id
+        const { role } = req.body
+
+        // Validazione dei ruoli consentiti
+        if (!['user', 'admin'].includes(role)) {
+            return res.status(400).json({ message: 'Ruolo non valido. Valori ammessi: "user", "admin"' })
+        }
+
+        // Impediamo all'admin di declassare se stesso per evitare il blocco accidentale dei privilegi
+        if (targetUserId === req.user.id) {
+            return res.status(400).json({ message: 'Non puoi modificare il tuo stesso ruolo amministratore' })
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+            targetUserId,
+            { role },
+            { new: true }
+        ).select('-password')
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'Utente non trovato' })
+        }
+
+        res.json({ message: `Ruolo aggiornato a ${role}`, user: updatedUser })
+    } catch (error) {
+        res.status(500).json({ message: 'Errore nell\'aggiornamento del ruolo utente', error })
+    }
+}
+
 module.exports = {
     getLoggedUser,
     updateProfile,
@@ -198,5 +255,7 @@ module.exports = {
     getPosts,
     follow,
     unfollow,
-    getFollowing
+    getFollowing,
+    deleteUserByAdmin,
+    updateUserRole
 }

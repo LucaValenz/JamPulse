@@ -38,8 +38,11 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('user');
     }
 
+    // Proprietà di comodo: true se l'utente loggato è un amministratore
+    const isAdmin = user?.role === 'admin';
+
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, register }}>
+        <AuthContext.Provider value={{ user, token, isAdmin, login, logout, register }}>
             {children}
         </AuthContext.Provider>
     );

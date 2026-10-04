@@ -35,6 +35,15 @@ const userSchema = new mongoose.Schema({
     followers: {
         type: [mongoose.Schema.Types.ObjectId],
         ref: 'User'
+    },
+    // Ruolo dell'utente all'interno della piattaforma:
+    // 'user' = utente normale (può creare post, commenti, seguire altri utenti e chattare)
+    // 'admin' = amministratore (può moderare ed eliminare post e commenti altrui, e gestire gli utenti)
+    role: {
+        type: String,
+        enum: ['user', 'admin'],
+        default: 'user',
+        required: true
     }
 }, { timestamps: true });
 

@@ -81,6 +81,53 @@ export default function Chat() {
         loadData();
     }, []);
 
+    // --- FUNZIONI HELPER ---
+
+    // Trova "l'altra persona" in una chat a due partecipanti.
+    // I participants arrivano già popolati (con _id e username) dal backend.
+    const getOtherUser = (chat) => {
+        if (!user || !chat.participants) return null;
+        // .find() ritorna il primo elemento che soddisfa la condizione
+        return chat.participants.find(p => p._id !== user.id);
+    };
+
+    // Controlla se un dato userId è tra gli utenti che seguiamo.
+    // Ci serve per dividere le chat in "principali" e "richieste".
+    const isFollowing = (userId) => {
+        return following.some(f => f._id === userId);
+    };
+
+    // Carica i messaggi di una chat e la imposta come attiva.
+    async function handleSelectChat(chat) {
+        setActiveChat(chat);
+        try {
+            const msgs = await getMessages(chat._id);
+            setMessages(msgs);
+        } catch (error) {
+            console.error("Errore nel caricamento dei messaggi:", error);
+        }
+    }
+
+    // Gestisce il click su un utente che seguiamo ma con cui non abbiamo ancora una chat.
+    // Chiama createChat sul backend: se la chat esiste già la riusa, altrimenti la crea.
+    async function handleSelectFollowing(followedUser) {
+        try {
+            // createChat è già idempotente lato backend: se la chat esiste, la ritorna.
+            const chat = await createChat({ targetUserId: followedUser._id });
+
+            // Aggiorniamo la lista locale di chat se quella ritornata non c'era già
+            setChats(prev => {
+                const exists = prev.find(c => c._id === chat._id);
+                return exists ? prev : [chat, ...prev];
+            });
+
+            // Apriamo subito la chat e carichiamo i messaggi
+            await handleSelectChat(chat);
+        } catch (error) {
+            console.error("Errore nell'apertura della chat:", error);
+        }
+    }
+
     // Quando i dati iniziali (chats + following) sono pronti E siamo arrivati
     // qui tramite il tasto "Scrivi", apriamo subito la chat con quell'utente.
     // Le dipendenze [chats, following] garantiscono che questo venga eseguito
@@ -103,53 +150,6 @@ export default function Chat() {
         window.history.replaceState({}, '');
 
     }, [chats, following]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // --- FUNZIONI HELPER ---
-
-    // Trova "l'altra persona" in una chat a due partecipanti.
-    // I participants arrivano già popolati (con _id e username) dal backend.
-    const getOtherUser = (chat) => {
-        if (!user || !chat.participants) return null;
-        // .find() ritorna il primo elemento che soddisfa la condizione
-        return chat.participants.find(p => p._id !== user.id);
-    };
-
-    // Controlla se un dato userId è tra gli utenti che seguiamo.
-    // Ci serve per dividere le chat in "principali" e "richieste".
-    const isFollowing = (userId) => {
-        return following.some(f => f._id === userId);
-    };
-
-    // Gestisce il click su un utente che seguiamo ma con cui non abbiamo ancora una chat.
-    // Chiama createChat sul backend: se la chat esiste già la riusa, altrimenti la crea.
-    const handleSelectFollowing = async (followedUser) => {
-        try {
-            // createChat è già idempotente lato backend: se la chat esiste, la ritorna.
-            const chat = await createChat({ targetUserId: followedUser._id });
-
-            // Aggiorniamo la lista locale di chat se quella ritornata non c'era già
-            setChats(prev => {
-                const exists = prev.find(c => c._id === chat._id);
-                return exists ? prev : [chat, ...prev];
-            });
-
-            // Apriamo subito la chat e carichiamo i messaggi
-            await handleSelectChat(chat);
-        } catch (error) {
-            console.error("Errore nell'apertura della chat:", error);
-        }
-    };
-
-    // Carica i messaggi di una chat e la imposta come attiva.
-    const handleSelectChat = async (chat) => {
-        setActiveChat(chat);
-        try {
-            const msgs = await getMessages(chat._id);
-            setMessages(msgs);
-        } catch (error) {
-            console.error("Errore nel caricamento dei messaggi:", error);
-        }
-    };
 
     // Invia un nuovo messaggio nella chat attiva.
     // Invia un nuovo messaggio nella chat attiva.
@@ -253,6 +253,7 @@ export default function Chat() {
                                 <UserBadge
                                     username={otherUser?.username || "Utente Sconosciuto"}
                                     userId={otherUser?._id}
+                                    role={otherUser?.role}
                                 />
                             </Box>
                         );
@@ -272,6 +273,7 @@ export default function Chat() {
                             <UserBadge
                                 username={followedUser.username}
                                 userId={followedUser._id}
+                                role={followedUser.role}
                             />
                         </Box>
                     ))}
@@ -310,6 +312,7 @@ export default function Chat() {
                                         <UserBadge
                                             username={otherUser?.username || "Utente Sconosciuto"}
                                             userId={otherUser?._id}
+                                            role={otherUser?.role}
                                         />
                                     </Box>
                                 );

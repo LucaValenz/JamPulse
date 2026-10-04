@@ -19,19 +19,31 @@ async function register(req, res) {
         if (userExist)
             return res.status(400).json({ message: 'Email o Username già utilizzati' })
 
-        // Istanziamo un nuovo documento utente passando i dati ricevuti.        
-        const newUser = new User({ email, username, password, instruments, genres })
+        // Istanziamo un nuovo documento utente passando i dati ricevuti.
+        // ! SICUREZZA: Forziamo esplicitamente role: 'user'.
+        // In questo modo, anche se un utente malintenzionato tentasse di inviare "role": "admin"
+        // nel body della richiesta HTTP, non potrà mai auto-assegnarsi privilegi amministrativi.
+        const newUser = new User({ 
+            email, 
+            username, 
+            password, 
+            instruments, 
+            genres,
+            role: 'user' 
+        })
 
         // Scriviamo fisicamente i dati su MongoDB.
         await newUser.save()
 
         // Restituiamo status 201 (Created) per confermare l'avvenuta creazione.
+        // Includiamo anche il ruolo dell'utente appena registrato.
         res.status(201).json({
             message: 'Utente registrato correttamente',
             user: {
                 id: newUser._id,
                 email: newUser.email,
                 username: newUser.username,
+                role: newUser.role,
                 instruments: newUser.instruments,
                 genres: newUser.genres
             }
@@ -65,15 +77,30 @@ async function login(req, res) {
             return res.status(401).json({ message: 'Username o password errati' })
         }
 
-        // Se username e password sono correti generiamo un token usando come payload l'ID dell'utente
-        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '2h' })
+        // ! SICUREZZA POTENZIATA DEL TOKEN JWT:
+        // 1. Includiamo nel payload sia l'ID dell'utente che il suo RUOLO ('user' o 'admin').
+        //    Questo permette al server di autorizzare le richieste senza dover interrogare il DB ad ogni chiamata.
+        // 2. Specifichiamo l'algoritmo di firma crittografica 'HS256' in modo esplicito.
+        // 3. La durata del token è configurabile da variabile d'ambiente (default: 2 ore).
+        const token = jwt.sign(
+            { 
+                userId: user._id, 
+                role: user.role 
+            }, 
+            process.env.JWT_SECRET, 
+            { 
+                algorithm: 'HS256',
+                expiresIn: process.env.JWT_EXPIRES_IN || '2h' 
+            }
+        )
 
-        // inviamo la risposta positiva che contiene il token e alcune informazioni dell'utente
+        // inviamo la risposta positiva che contiene il token e le informazioni essenziali dell'utente (compreso il ruolo)
         res.json({
             token,
             user: {
                 id: user._id,
-                username: user.username
+                username: user.username,
+                role: user.role
             }
         })
 

@@ -1,4 +1,4 @@
-import { Stack, Avatar, Typography } from "@mui/material";
+import { Stack, Avatar, Typography, Chip } from "@mui/material";
 
 // Componente riutilizzabile che mostra avatar + nome utente di un partecipante.
 //
@@ -7,11 +7,13 @@ import { Stack, Avatar, Typography } from "@mui/material";
 //   - solo l'Avatar è cliccabile e porta al profilo
 //   - justifyContent cambiato da 'center' a 'flex-start' per allineare
 //     il contenuto a sinistra all'interno del riquadro della sidebar
+//   - visualizzazione opzionale del badge del ruolo (es. Admin)
 //
 // Props:
 //   - username (string): nome utente da mostrare
 //   - userId (string): ID usato per navigare al profilo al click sull'avatar
-export default function UserBadge({ username, userId }) {
+//   - role (string, opzionale): ruolo dell'utente ('admin' o 'user')
+export default function UserBadge({ username, userId, role }) {
 
     const avatarSize = 48; // Ridotto da 80: più compatto nella sidebar della chat
 
@@ -45,9 +47,19 @@ export default function UserBadge({ username, userId }) {
             />
             {/* Nome utente: testo semplice, non cliccabile.
                 noWrap taglia con "..." se il nome è troppo lungo per la sidebar. */}
-            <Typography variant="body1" noWrap>
-                {username || 'Caricamento...'}
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+                <Typography variant="body1" noWrap>
+                    {username || 'Caricamento...'}
+                </Typography>
+                {role === 'admin' && (
+                    <Chip 
+                        label="Admin" 
+                        size="small" 
+                        color="error" 
+                        sx={{ height: 20, fontSize: '0.68rem', fontWeight: 'bold' }} 
+                    />
+                )}
+            </Stack>
         </Stack>
     );
 }

@@ -42,7 +42,8 @@ const options = {
                         instruments: { type: "array", items: { type: "string" } },
                         genres: { type: "array", items: { type: "string" } },
                         following: { type: "array", items: { type: "string" } },
-                        followers: { type: "array", items: { type: "string" } }
+                        followers: { type: "array", items: { type: "string" } },
+                        role: { type: "string", enum: ["user", "admin"], example: "user" }
                     },
                 },
                 // Modello Post

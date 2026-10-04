@@ -1,6 +1,15 @@
 // * IMPORTIAMO LE VARIABILI D'AMBIENTE ----------------------------------------------------------------------------------------------------------------------------------------------------
 require('dotenv').config();
 
+// ! CONTROLLO DI SICUREZZA VARIABILI D'AMBIENTE
+// Verifichiamo che la chiave segreta per la firma dei token JWT sia definita e sicura
+if (!process.env.JWT_SECRET) {
+    console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET non impostato nel file .env! Verrà utilizzato un valore di fallback temporaneo.');
+    process.env.JWT_SECRET = 'jampulse_default_development_secret_key_change_in_production';
+} else if (process.env.JWT_SECRET === 'your_jwt_secret') {
+    console.warn('⚠️ [AVVISO SICUREZZA]: JWT_SECRET utilizza il valore predefinito di esempio "your_jwt_secret". Si consiglia di sostituirlo con una chiave casuale complessa.');
+}
+
 // * IMPORTIAMO I MODULI NECESSARI -----------------------------------------------------------------------------------------------------------------------------------------------------------
 const express = require('express');
 const mongoose = require('mongoose');

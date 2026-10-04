@@ -22,10 +22,17 @@ export default function UserCard({ user }) {
                 '/profile/abc123' → React Router lo legge come :id in <Route path="/profile/:id"> */}
             <CardActionArea onClick={() => navigate(`/profile/${user._id}`)}>
 
-                {/* CardHeader mostra il titolo della card.
-                    Prima: title={username} → sempre "Nome Utente"
-                    Ora:   title={user.username} → nome reale preso dall'oggetto utente */}
-                <CardHeader title={user.username} />
+                {/* CardHeader mostra il nome dell'utente e il badge Admin se presente */}
+                <CardHeader 
+                    title={
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                            <Typography variant="h6">{user.username}</Typography>
+                            {user.role === 'admin' && (
+                                <Chip label="Admin" size="small" color="error" sx={{ height: 20, fontSize: '0.68rem', fontWeight: 'bold' }} />
+                            )}
+                        </Stack>
+                    } 
+                />
 
                 {/* Immagine profilo generata dinamicamente in base al nome utente.
                     ui-avatars.com è un servizio gratuito che genera avatar con le iniziali.

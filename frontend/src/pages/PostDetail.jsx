@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-    Avatar, Box, CircularProgress, Divider, List, ListItem,
+    Avatar, Box, CircularProgress, List, ListItem,
     ListItemAvatar, ListItemText, Stack, Typography, TextField, IconButton,
     useTheme
 } from "@mui/material";
@@ -13,8 +13,9 @@ import UserBadge from "../components/UserBadge";
 import SendIcon from '@mui/icons-material/Send';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import FavoriteIcon from '@mui/icons-material/Favorite';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { getPostById, toggleLike } from "../services/postServices";
-import { getComments, createComment } from "../services/commentServices";
+import { getComments, createComment, deleteComment } from "../services/commentServices";
 import { useAuth } from "../context/AuthContext";
 import CloseIcon from '@mui/icons-material/Close';
 import { getTimeAgo } from "../utils/timeUtils";
@@ -121,6 +122,17 @@ export default function PostDetail() {
             setCommentText('');
         } catch (err) {
             console.error('Errore nell\'invio del commento:', err);
+        }
+    }
+
+    // ! NUOVO: funzione per eliminare un commento (consentito all'autore o all'admin)
+    async function handleDeleteComment(commentId) {
+        try {
+            await deleteComment(id, commentId);
+            // Aggiorniamo la lista locale rimuovendo il commento eliminato
+            setComments(prev => prev.filter(c => c._id !== commentId));
+        } catch (err) {
+            console.error("Errore nell'eliminazione del commento:", err);
         }
     }
 
@@ -277,15 +289,29 @@ export default function PostDetail() {
                                     {/* ! MODIFICATO: prima erano author e text hardcoded, ora sono dati reali */}
                                     <ListItemText
                                         primary={
-                                            <Stack direction='row' sx={{ justifyContent: 'space-between' }}>
+                                            <Stack direction='row' sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <Typography variant="subtitle2"
                                                     onClick={() => navigate(`/profile/${comment.authorId._id}`)}
                                                     sx={{ fontWeight: 'bold', cursor: 'pointer' }}>
                                                     {comment.authorId?.username || 'Utente'}
                                                 </Typography>
-                                                <Typography variant="caption">
-                                                    {getTimeAgo(comment.createdAt)}
-                                                </Typography>
+                                                <Stack direction='row' spacing={1} sx={{ alignItems: 'center' }}>
+                                                    <Typography variant="caption">
+                                                        {getTimeAgo(comment.createdAt)}
+                                                    </Typography>
+                                                    {/* Pulsante di eliminazione visibile per l'autore del commento o per gli admin (moderazione) */}
+                                                    {(user?.id === comment.authorId?._id || user?.role === 'admin') && (
+                                                        <IconButton 
+                                                            size="small" 
+                                                            color="error" 
+                                                            onClick={() => handleDeleteComment(comment._id)} 
+                                                            title={user?.role === 'admin' && user?.id !== comment.authorId?._id ? "Elimina commento (Admin)" : "Elimina commento"}
+                                                            sx={{ padding: '2px' }}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    )}
+                                                </Stack>
                                             </Stack>
                                         }
                                         secondary={comment.text}

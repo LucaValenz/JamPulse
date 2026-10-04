@@ -26,13 +26,18 @@ axios.interceptors.response.use(
         return response;
     },
     (error) => {
-        // Se il backend risponde con 401 (Non Autorizzato / Token scaduto)
-        if (error.response && error.response.status === 401) {
-            console.error("Sessione scaduta. Reindirizzamento al login.");
+        // Se il backend risponde con 401 per rotte protette (token mancante, non valido o scaduto)
+        // ! Evitiamo il reindirizzamento forzato se il 401 proviene dalla richiesta di login stessa (credenziali errate)
+        const isAuthLogin = error.config?.url?.includes('/auth/login');
+
+        if (error.response && error.response.status === 401 && !isAuthLogin) {
+            console.error("Sessione non valida o scaduta. Reindirizzamento al login.");
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            // Forziamo il riavvio dell'app sulla pagina di login
-            window.location.href = '/login';
+            // Forziamo il riavvio dell'app sulla pagina di login solo se non siamo già sulla pagina di login
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }

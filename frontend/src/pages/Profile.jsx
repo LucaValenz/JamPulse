@@ -1,7 +1,7 @@
 // frontend/src/pages/Profile.jsx
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Avatar, Button, CircularProgress, Stack, Typography, Box, TextField, Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
+import { Avatar, Button, CircularProgress, Stack, Typography, Box, TextField, Chip, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
 import PostCard from "../components/PostCard";
 import MultiSelectFilter from "../components/MultiSelectFilter";
 import { useAuth } from "../context/AuthContext";
@@ -174,12 +174,20 @@ export default function Profile() {
                     src={`https://ui-avatars.com/api/?name=${profileUser.username}&size=300`}
                     sx={{ width: avatarSize, height: avatarSize }} />
 
-                {/* Blocco delle informazioni utente: raccoglie nome, biografia e dettagli musicali. */}
-                {/* Ho usato uno Stack verticale perché queste informazioni sono correlate tra loro e vanno mostrate in colonna. */}
                 <Stack spacing={3} sx={{ justifyContent: 'center', maxWidth: { sm: '100%', md: '50%' } }}>
-                    <Typography component='h1' variant='h3' align="center">
-                        {profileUser.username}
-                    </Typography>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography component='h1' variant='h3' align="center">
+                            {profileUser.username}
+                        </Typography>
+                        {profileUser.role === 'admin' && (
+                            <Chip 
+                                label="Admin" 
+                                color="error" 
+                                size="small" 
+                                sx={{ fontWeight: 'bold', fontSize: '0.8rem' }} 
+                            />
+                        )}
+                    </Stack>
                     <Typography component='p' variant='h6' color='textSecondary' sx={{ fontStyle: 'italic' }}>
                         {/* Se bio è una stringa vuota (il default del modello), mostriamo un testo alternativo */}
                         {profileUser.bio || "Nessuna bio disponibile."}

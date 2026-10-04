@@ -96,7 +96,8 @@ async function updatePost(req, res) {
 }
 
 // DELETE /posts/:id
-// Elimina un post. Anche qui verifichiamo che sia il proprietario a eliminarlo.
+// Elimina un post. 
+// L'operazione è consentita se l'utente è l'autore del post OPPURE se ha il ruolo di 'admin' (moderazione contenuti).
 async function deletePost(req, res) {
     try {
         const post = await Post.findById(req.params.id)
@@ -104,7 +105,11 @@ async function deletePost(req, res) {
         if (!post)
             return res.status(404).json({ message: 'Post non trovato' })
 
-        if (post.userID.toString() !== req.user.id)
+        // Verifichiamo se l'utente loggato è l'autore del post oppure un amministratore
+        const isAuthor = post.userID.toString() === req.user.id
+        const isAdmin = req.user.role === 'admin'
+
+        if (!isAuthor && !isAdmin)
             return res.status(403).json({ message: 'Non sei autorizzato a eliminare questo post' })
 
         await Post.findByIdAndDelete(req.params.id)

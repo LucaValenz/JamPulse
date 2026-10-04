@@ -90,7 +90,7 @@ async function updateComment(req, res) {
 
 // DELETE /posts/:id/comments/:commentId
 // Elimina definitivamente un commento dal database.
-// Anche qui, solo l'autore può eliminare il proprio commento.
+// L'operazione è permessa all'autore originale del commento OPPURE a un amministratore (moderazione).
 async function deleteComment(req, res) {
     try {
         const { commentId } = req.params
@@ -100,8 +100,11 @@ async function deleteComment(req, res) {
         if (!comment)
             return res.status(404).json({ message: 'Commento non trovato' })
             
-        // Stesso controllo di sicurezza fatto nella PUT
-        if (comment.authorId.toString() !== req.user.id)
+        // Controllo di sicurezza: verifichiamo che l'utente loggato sia l'autore oppure un admin
+        const isAuthor = comment.authorId.toString() === req.user.id
+        const isAdmin = req.user.role === 'admin'
+
+        if (!isAuthor && !isAdmin)
             return res.status(403).json({ message: 'Azione non autorizzata' })
             
         // Rimuove il commento dal database.

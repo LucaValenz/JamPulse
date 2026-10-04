@@ -31,6 +31,12 @@ export default function PostCard({ post, onDelete }) {
     // lo confrontiamo con user.id, l'ID dell'utente loggato salvato nel contesto.
     const isOwner = user?.id === post.userID?._id;
 
+    // true se l'utente loggato possiede i privilegi di amministratore
+    const isAdmin = user?.role === 'admin';
+
+    // L'utente può eliminare il post se ne è l'autore oppure se è un admin (moderazione)
+    const canDelete = isOwner || isAdmin;
+
     // ! NUOVO: chiama DELETE /posts/:id e, se va a buon fine, notifica il padre
     // tramite onDelete così la card sparisce dalla lista senza ricaricare la pagina.
     async function handleDelete() {
@@ -41,13 +47,13 @@ export default function PostCard({ post, onDelete }) {
         } catch (err) {
             console.error("Errore nell'eliminazione del post:", err);
         }
-}
+    }
 
     return (
         <Card sx={{ width: 370 }}>
             {/* Header: cliccando si va al profilo dell'autore del post.
                 post.userID._id è l'ID dell'autore, disponibile grazie al populate nel backend. */}            
-                {/* Header: avatar e nome autore a sinistra, menu "..." a destra se è un nostro post */}
+                {/* Header: avatar e nome autore a sinistra, menu "..." a destra se è nostro o siamo admin */}
                 <Stack direction='row' sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
                     <CardActionArea onClick={() => navigate(`/profile/${post.userID._id}`)}>
                         <CardHeader
@@ -70,20 +76,20 @@ export default function PostCard({ post, onDelete }) {
                         />
                     </CardActionArea>
 
-                    {/* ! NUOVO: bottone "..." visibile solo se il post è nostro */}
-                    {isOwner && (
+                    {/* Bottone "..." visibile se il post è dell'utente oppure se l'utente è un admin */}
+                    {canDelete && (
                         <>
                             <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} size="small" sx={{ mr: 1 }}>
                                 <MoreVertIcon color="textSecondary" />
                             </IconButton>
-                            {/* Menu con le azioni disponibili sul proprio post */}
+                            {/* Menu con le azioni disponibili sul proprio post o per moderazione */}
                             <Menu
                                 anchorEl={menuAnchor}
                                 open={Boolean(menuAnchor)}
                                 onClose={() => setMenuAnchor(null)}
                             >
                                 <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
-                                    Elimina post
+                                    {isOwner ? "Elimina post" : "Elimina post (Admin)"}
                                 </MenuItem>
                             </Menu>
                         </>

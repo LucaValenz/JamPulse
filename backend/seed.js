@@ -9,13 +9,13 @@ const Chat = require('./models/Chat');
 const Message = require('./models/Message');
 const bcrypt = require('bcryptjs');
 
-// Dati fittizi per i musicisti
+// Dati fittizi per i musicisti (tutti con ruolo 'user')
 const musiciansData = [
-    { username: 'freddiemercury', email: 'freddie@queen.com', password: 'password123', bio: 'Cantante, pianista, leggenda.', instruments: ['Voce', 'Pianoforte'], genres: ['Rock', 'Pop'] },
-    { username: 'jimihendrix', email: 'jimi@experience.com', password: 'password123', bio: 'Scusate se bacio il cielo.', instruments: ['Chitarra'], genres: ['Rock', 'Blues'] },
-    { username: 'milesdavis', email: 'miles@cool.com', password: 'password123', bio: 'Il re della tromba.', instruments: ['Tromba'], genres: ['Jazz'] },
-    { username: 'flea', email: 'flea@rhcp.com', password: 'password123', bio: 'Slap bass for life.', instruments: ['Basso'], genres: ['Funk', 'Rock'] },
-    { username: 'ludovico', email: 'ludo@classica.com', password: 'password123', bio: 'Compositore contemporaneo.', instruments: ['Pianoforte'], genres: ['Classica'] }
+    { username: 'freddiemercury', email: 'freddie@queen.com', password: 'password123', role: 'user', bio: 'Cantante, pianista, leggenda.', instruments: ['Voce', 'Pianoforte'], genres: ['Rock', 'Pop'] },
+    { username: 'jimihendrix', email: 'jimi@experience.com', password: 'password123', role: 'user', bio: 'Scusate se bacio il cielo.', instruments: ['Chitarra'], genres: ['Rock', 'Blues'] },
+    { username: 'milesdavis', email: 'miles@cool.com', password: 'password123', role: 'user', bio: 'Il re della tromba.', instruments: ['Tromba'], genres: ['Jazz'] },
+    { username: 'flea', email: 'flea@rhcp.com', password: 'password123', role: 'user', bio: 'Slap bass for life.', instruments: ['Basso'], genres: ['Funk', 'Rock'] },
+    { username: 'ludovico', email: 'ludo@classica.com', password: 'password123', role: 'user', bio: 'Compositore contemporaneo.', instruments: ['Pianoforte'], genres: ['Classica'] }
 ];
 
 async function seedDatabase() {
@@ -112,9 +112,22 @@ async function seedDatabase() {
         await User.create({
             username: 'test',
             email: 'test@test.com',
-            password: 'test'
+            password: 'test',
+            role: 'user'
         });
         console.log('🧪 Utente di test ("test") creato con successo.');
+
+        // 7. Crea l'utente amministratore con ruolo 'admin' (ha permessi di moderazione)
+        await User.create({
+            username: 'admin',
+            email: 'admin@jampulse.com',
+            password: 'adminpassword123',
+            role: 'admin',
+            bio: 'Amministratore della piattaforma JamPulse',
+            instruments: ['Regia'],
+            genres: ['All']
+        });
+        console.log('🛡️  Utente amministratore ("admin" / password: "adminpassword123") creato con successo.');
 
         console.log('✅ Seeding completato con successo!');
         process.exit(0);
