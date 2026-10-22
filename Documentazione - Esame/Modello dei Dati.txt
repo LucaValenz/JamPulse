@@ -1,0 +1,48 @@
+1. Modello User (User.js)
+Rappresenta l'utente registrato sulla piattaforma e gestisce sia le informazioni personali che le relazioni sociali di follow e la sicurezza delle credenziali. 
+	username: String (Obbligatorio, Unico) — Nome utente univoco scelto in fase di registrazione. 
+	email: String (Obbligatorio, Unico) — Indirizzo email dell'utente. 
+	password: String (Obbligatorio) — Password dell'utente, memorizzata in modo sicuro sotto forma di hash tramite l'algoritmo bcryptjs (grazie a un middleware pre-save). 
+	bio: String (Default: stringa vuota) — Breve descrizione o biografia del musicista. 
+	instruments: Array di String (Default: array vuoto) — Lista degli strumenti musicali suonati dall'utente (es. Chitarra, Basso). 
+	genres: Array di String (Default: array vuoto) — Generi musicali preferiti (es. Rock, Jazz, Funk). 
+	following: Array di ObjectId con riferimento a User — Elenco degli utenti seguiti dall'utente corrente. 
+	followers: Array di ObjectId con riferimento a User — Elenco dei follower che seguono l'utente. 
+	role: String (Obbligatorio, enum: ['user', 'admin'], Default: 'user') — Ruolo e livello di autorizzazione dell'utente all'interno della piattaforma (RBAC). 'user' identifica i normali musicisti, mentre 'admin' garantisce privilegi di moderazione (eliminazione di qualsiasi post/commento) e gestione degli account utente.
+	timestamps: Gestito automaticamente da Mongoose (createdAt, updatedAt). 
+2. Modello Post (Post.js)
+Rappresenta i contenuti multimediali o testuali pubblicati dagli utenti all'interno del feed sociale.
+	userID: ObjectId (Obbligatorio, Riferimento a User) — Identificativo dell'autore del post. 
+	content: String (Obbligatorio) — Il testo o la descrizione del post. 
+	media: String (Default: stringa vuota) — URL o percorso dell'eventuale allegato multimediale (immagini o file). 
+	likes: Array di ObjectId con riferimento a User (Default: array vuoto) — Elenco degli utenti che hanno messo "mi piace" al post (gestito tramite logica di toggle). 
+	timestamps: Gestito automaticamente (createdAt, updatedAt) per ordinare il feed dal più recente al più vecchio. 
+3. Modello Comment (Comment.js)
+Gestisce i commenti scritti dagli utenti sotto ai post.
+	postId: ObjectId (Obbligatorio, Riferimento a Post) — Indica a quale post appartiene il commento. 
+	authorId: ObjectId (Obbligatorio, Riferimento a User) — Indica quale utente ha scritto il commento. 
+	text: String (Obbligatorio, trim: true) — Il testo del commento. 
+	timestamps: Gestito automaticamente (createdAt, updatedAt) per l'ordinamento cronologico dei commenti. 
+4. Modello Chat (Chat.js)
+Rappresenta una conversazione privata tra due o più utenti.
+	participants: Array di ObjectId con riferimento a User (Obbligatorio) — Elenco dei partecipanti ammessi alla chat privata. 
+	timestamps: Gestito automaticamente (createdAt, updatedAt). L'aggiornamento del campo updatedAt viene sfruttato per far risalire in cima alla lista le chat in cui avvengono interazioni recenti. 
+5. Modello Message (Message.js)
+Rappresenta i singoli messaggi scambiati all'interno di una determinata chat.
+	chatID: ObjectId (Obbligatorio, Riferimento a Chat) — Identificativo della conversazione di appartenenza. 
+	senderID: ObjectId (Obbligatorio, Riferimento a User) — Identificativo dell'utente mittente del messaggio. 
+	content: String (Obbligatorio) — Il testo del messaggio inviato. 
+	timestamps: Gestito automaticamente (createdAt, updatedAt) per ordinare cronologicamente la cronologia della chat. 
+6. Modello RefreshToken (RefreshToken.js)
+Rappresenta le sessioni persistenti di autenticazione per l'implementazione dell'architettura "Dual-Token" (Access Token a breve scadenza e Refresh Token a lunga scadenza). Permette la revoca immediata delle sessioni (in caso di logout o da parte di amministratori) e supporta la Token Rotation.
+	token: String (Obbligatorio, Unico) — Valore univoco del Refresh Token JWT crittografato.
+	user: ObjectId (Obbligatorio, Riferimento a User) — Riferimento all'utente proprietario della sessione.
+	expiresAt: Date (Obbligatorio) — Data e ora di scadenza del token (default: 7 giorni). È associata a un indice Time-To-Live (TTL) automatico di MongoDB ({ expireAfterSeconds: 0 }) che elimina fisicamente il record dal database non appena il token scade, senza richiedere cron job.
+	createdAt: Date (Default: Date.now) — Data e ora di creazione della sessione nel database.
+Schema delle Relazioni (Riepilogo)
+	User ↔ User (Social Graph): Relazione riflessiva a molti-a-molti tramite gli array followers e following. 
+	User → Post: Relazione uno-a-molti (un utente può creare molteplici post). 
+	Post → Comment: Relazione uno-a-molti (un post può contenere numerosi commenti). 
+	User ↔ Chat: Relazione molti-a-molti tramite l'array di participants. 
+	Chat → Message: Relazione uno-a-molti (una chat contiene una sequenza di messaggi). 
+	User → RefreshToken: Relazione uno-a-molti (un utente può possedere più sessioni/token attivi su diversi dispositivi).

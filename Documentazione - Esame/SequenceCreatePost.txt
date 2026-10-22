@@ -10,22 +10,28 @@ participant "Backend (Express)" as BE
 database "MongoDB" as DB
 
 User -> FE: Compila il post e pubblica
-FE -> BE: POST /api/v1/posts + Header: Bearer <token>
+FE -> BE: POST /api/v1/posts + Header: Bearer <accessToken>
 activate BE
 
 BE -> Auth: verifyToken(req, res, next)
 activate Auth
-Auth -> Auth: Verifica validità token JWT e ricava req.user.id
+Auth -> Auth: Verifica validità token JWT (HS256) e ricava req.user (id, role)
 Auth --> BE: Token valido (prosegue)
 deactivate Auth
 
-BE -> DB: Post.create({ userID: req.user.id, content, media })
-activate DB
-DB --> BE: Conferma salvataggio del post
-deactivate DB
+BE -> BE: Validazione input (controllo testo obbligatorio)
 
-BE --> FE: Restituisce 201 Created + dati del post
+alt Dati validi
+    BE -> DB: Post.create({ userID: req.user.id, content, media })
+    activate DB
+    DB --> BE: Conferma salvataggio del post
+    deactivate DB
+    BE --> FE: Restituisce 201 Created + dati del post
+    FE --> User: Aggiorna il Feed mostrando il nuovo post
+else Dati non validi
+    BE --> FE: Restituisce 400 Bad Request
+    FE --> User: Mostra messaggio di errore
+end
+
 deactivate BE
-
-FE --> User: Aggiorna il Feed mostrando il nuovo post
 @enduml

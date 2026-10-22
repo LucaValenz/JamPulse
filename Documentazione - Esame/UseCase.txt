@@ -5,12 +5,16 @@ skinparam packageStyle rectangle
 
 actor "Ospite (Non Autenticato)" as Guest
 actor "Utente Registrato" as User
+actor "Amministratore" as Admin
+
+User <|-- Admin
 
 rectangle "JamPulse Application" {
 
     package "Autenticazione" {
         usecase "Registrazione" as UC1
         usecase "Login" as UC2
+        usecase "Logout (Revoca Sessione)" as UC_Logout
     }
 
     package "Gestione Profilo" {
@@ -18,19 +22,19 @@ rectangle "JamPulse Application" {
         usecase "Modifica Profilo\n(Bio, Strumenti, Generi)" as UC4
         usecase "Visualizza Altri Profili" as UC5
         usecase "Segui / Smetti di seguire utente" as UC6
-        
     }
 
     package "Post" {
         usecase "Visualizza Post" as UC8
         usecase "Crea Nuovo Post" as UC9
-        usecase "Elimina Post" as UC10
+        usecase "Elimina Proprio Post" as UC10
         usecase "Metti / Togli Like" as UC11
     }
 
     package "Commenti" {
         usecase "Visualizza Commenti" as UC12
         usecase "Aggiungi Commento" as UC13
+        usecase "Elimina Proprio Commento" as UC14
     }
 
     package "Ricerca" {
@@ -43,15 +47,21 @@ rectangle "JamPulse Application" {
         usecase "Crea o Recupera Chat Privata" as UC18
         usecase "Invia / Ricevi Messaggi" as UC19
     }
+
+    package "Moderazione & Amministrazione" {
+        usecase "Elimina Qualsiasi Post\n(Moderazione)" as UCA1
+        usecase "Elimina Qualsiasi Commento\n(Moderazione)" as UCA2
+        usecase "Elimina Account Utente" as UCA3
+        usecase "Modifica Ruolo Utente\n(Assegna Ruolo Admin)" as UCA4
+    }
 }
-
-
 
 ' Collegamenti Ospite
 Guest --> UC1
 Guest --> UC2
 
 ' Collegamenti Utente Registrato
+User --> UC_Logout
 User --> UC3
 User --> UC4
 User --> UC5
@@ -61,8 +71,10 @@ User --> UC8
 User --> UC9
 User --> UC10
 User --> UC11
+
 User --> UC12
 User --> UC13
+User --> UC14
 
 User --> UC15
 User --> UC16
@@ -70,7 +82,13 @@ User --> UC17
 User --> UC18
 User --> UC19
 
+' Collegamenti Amministratore (azioni esclusive di moderazione/gestione)
+Admin --> UCA1
+Admin --> UCA2
+Admin --> UCA3
+Admin --> UCA4
 
 ' Relazioni opzionali di dipendenza (Include/Extend)
 UC12 ..> UC8 : <<include>>
 UC19 ..> UC17 : <<include>>
+@enduml
