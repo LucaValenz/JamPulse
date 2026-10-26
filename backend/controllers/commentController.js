@@ -51,6 +51,10 @@ async function createComment(req, res) {
         // di mostrare immediatamente l'avatar e il nome a schermo senza ricaricare la pagina.
         await newComment.populate('authorId', 'username');
         
+        // ! REAL-TIME: inviamo solo il documento salvato e popolato dal server.
+        // Il broadcast include il mittente: il frontend evita i duplicati tramite _id.
+        req.app.get('io').to(`post_${newComment.postId}`).emit('receive_comment', newComment);
+
         // 201 Created è lo status code HTTP corretto per la creazione di una nuova risorsa
         res.status(201).json({ newComment })
     } catch (error) {

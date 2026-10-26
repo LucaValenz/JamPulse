@@ -56,21 +56,21 @@ export default function PostDetail() {
     const [error, setError] = useState(null);
 
     // ! NUOVO REAL-TIME: callback chiamata quando arriva un commento da Socket.IO
-    // (cioè quando un ALTRO utente ha aperto lo stesso post e ha commentato).
+    // Il broadcast include anche i commenti scritti dall'utente corrente.
     // ! useCallback è fondamentale: stabilizza il riferimento della funzione tra i render.
     // ! Senza useCallback, ad ogni render di PostDetail verrebbe creata una nuova funzione,
     // ! causando l'effetto in useSocket di smontare e rimontare il listener continuamente.
     const handleCommentReceived = useCallback((newComment) => {
-        // Aggiungiamo in coda il commento arrivato via WebSocket
-        setComments(prev => [...prev, newComment]);
+        // REST e broadcast possono arrivare in qualsiasi ordine: evitiamo duplicati tramite _id.
+        setComments(prev => prev.some(c => c._id === newComment._id) ? prev : [...prev, newComment]);
     }, []); // [] = nessuna dipendenza, la funzione non cambia mai
 
     // ! NUOVO REAL-TIME: usiamo l'hook useSocket.
     // - I primi due parametri (chat) sono null perché PostDetail non usa la chat
     // - Passiamo l'id del post corrente come activePostId
     // - Passiamo handleCommentReceived come callback per i commenti in arrivo
-    // - Otteniamo emitSendComment per notificare gli altri utenti quando commentiamo noi
-    const { emitSendComment } = useSocket(null, () => { }, id, handleCommentReceived);
+    // Il server invia gli aggiornamenti dopo il salvataggio REST.
+    useSocket(null, null, id, handleCommentReceived);
 
     // ! NUOVO: al montaggio del componente (o quando cambia l'ID nell'URL)
     // carichiamo il post e i suoi commenti dal backend in parallelo con Promise.all.
@@ -112,11 +112,9 @@ export default function PostDetail() {
 
             // Aggiungiamo il nuovo commento in fondo alla lista senza ricaricare tutto.
             // ! Questo aggiorna l'UI dell'utente che ha scritto il commento (ottimistico).
-            setComments(prev => [...prev, newComment]);
+            setComments(prev => prev.some(c => c._id === newComment._id) ? prev : [...prev, newComment]);
 
-            // ! NUOVO REAL-TIME: notifichiamo via Socket.IO tutti gli altri utenti
-            // ! che hanno lo stesso post aperto, inviando loro il commento completo.
-            emitSendComment(id, newComment);
+            // Il controller REST ha già notificato la stanza tramite Socket.IO.
 
             // Puliamo il campo di input dopo l'invio
             setCommentText('');

@@ -56,66 +56,11 @@ app.use(cors({
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // * SOCKET.IO: GESTIONE CONNESSIONI REAL-TIME ----------------------------------------------------------------------------------------------------------------------------------------------
-// ! io.on('connection', ...) viene chiamato ogni volta che UN client (browser) si connette.
-// ! La variabile 'socket' rappresenta quel singolo client connesso.
-io.on('connection', (socket) => {
-    console.log(`[Socket.IO] Nuovo client connesso: ${socket.id}`);
+// La configurazione separata mantiene qui solo l'avvio del server.
+require('./socket')(io);
 
-    // ! EVENTO 'join_chat': il frontend lo emette quando l'utente apre una conversazione.
-    // ! socket.join(chatId) aggiunge questo client a una "stanza" (room) con nome = ID della chat.
-    // ! Le stanze sono gruppi logici: possiamo poi inviare messaggi SOLO ai client in quella stanza.
-    socket.on('join_chat', (chatId) => {
-        socket.join(chatId);
-        console.log(`[Socket.IO] Client ${socket.id} è entrato nella stanza: ${chatId}`);
-    });
-
-    // ! EVENTO 'leave_chat': il frontend lo emette quando l'utente cambia conversazione.
-    // ! socket.leave(chatId) rimuove il client dalla stanza, così non riceve più i messaggi di quella chat.
-    socket.on('leave_chat', (chatId) => {
-        socket.leave(chatId);
-        console.log(`[Socket.IO] Client ${socket.id} ha lasciato la stanza: ${chatId}`);
-    });
-
-    // ! EVENTO 'send_message': il frontend lo emette quando l'utente invia un messaggio.
-    // ! Riceviamo i dati del messaggio già salvato nel DB (con _id, senderID popolato, ecc.)
-    // ! e li "broadcastiamo" a tutti gli altri client nella stessa stanza.
-    socket.on('send_message', ({ chatId, message }) => {
-        // ! socket.to(chatId).emit(...) invia l'evento SOLO agli altri client nella stanza 'chatId',
-        // ! escluso chi ha emesso 'send_message' (che ha già aggiornato la sua UI localmente).
-        socket.to(chatId).emit('receive_message', message);
-        console.log(`[Socket.IO] Messaggio inoltrato nella stanza: ${chatId}`);
-    });
-
-    // ! REAL-TIME COMMENTI: il frontend emette 'join_post' quando l'utente apre un PostDetail.
-    // ! Aggiungiamo il client alla "stanza" del post (identificata dal suo ID),
-    // ! così potrà ricevere solo i commenti di quel post specifico.
-    socket.on('join_post', (postId) => {
-        socket.join(`post_${postId}`);
-        console.log(`[Socket.IO] Client ${socket.id} è entrato nella stanza del post: post_${postId}`);
-    });
-
-    // ! REAL-TIME COMMENTI: il frontend emette 'leave_post' quando l'utente
-    // ! chiude il dettaglio del post (smontaggio componente).
-    // ! Usciamo dalla stanza per non ricevere più aggiornamenti inutili.
-    socket.on('leave_post', (postId) => {
-        socket.leave(`post_${postId}`);
-        console.log(`[Socket.IO] Client ${socket.id} ha lasciato la stanza del post: post_${postId}`);
-    });
-
-    // ! REAL-TIME COMMENTI: il frontend emette 'send_comment' dopo aver salvato
-    // ! il commento nel DB via REST. Il server lo broadcast a tutti gli altri
-    // ! client nella stessa stanza (es. un amico che ha lo stesso post aperto).
-    socket.on('send_comment', ({ postId, comment }) => {
-        // ! socket.to(...) esclude chi ha emesso l'evento (che aggiorna già la sua UI localmente)
-        socket.to(`post_${postId}`).emit('receive_comment', comment);
-        console.log(`[Socket.IO] Commento inoltrato nella stanza: post_${postId}`);
-    });
-
-    // ! EVENTO 'disconnect': viene chiamato automaticamente quando il client chiude il browser/tab.
-    socket.on('disconnect', () => {
-        console.log(`[Socket.IO] Client disconnesso: ${socket.id}`);
-    });
-});
+// Rendiamo Socket.IO disponibile ai controller REST, unici responsabili dei broadcast.
+app.set('io', io);
 
 // * ROUTES --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 app.use((req, res, next) => { // !  questo serve per creare un middleware che stampa il path e il metodo della richiesta in arrivo per avere un log delle richieste in arrivo

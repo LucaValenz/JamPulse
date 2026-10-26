@@ -84,6 +84,10 @@ async function createMessage(req, res) {
         // Popoliamo il messaggio appena creato per restituire al frontend anche l'username.
         await newMessage.populate('senderID', 'username');
 
+        // ! REAL-TIME: inviamo solo il documento salvato e popolato dal server.
+        // Il broadcast include il mittente: il frontend evita i duplicati tramite _id.
+        req.app.get('io').to(`chat_${newMessage.chatID}`).emit('receive_message', newMessage);
+
         res.status(201).json(newMessage);
     } catch (error) {
         if (error.name === 'CastError') {
