@@ -2,7 +2,8 @@
 // Prima tutto era hardcoded (immagine fissa, commenti finti, utente finto).
 // Ora carichiamo i dati reali dal backend usando l'ID del post che arriva dall'URL.
 // ! AGGIORNATO: aggiunto supporto real-time per i commenti tramite Socket.IO.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { mergeRealtime } from "../utils/realtime";
 import { useParams, useNavigate } from "react-router-dom";
 import {
     Avatar, Box, CircularProgress, List, ListItem,
@@ -31,6 +32,15 @@ import { useSocket } from "../hooks/useSocket";
 export default function PostDetail() {
     // ! NUOVO: leggiamo l'ID del post dall'URL (parametro :id definito in App.jsx)
     const { id } = useParams();
+    const currentPostId = useRef(id);
+    const commentRequest = useRef(0);
+    const commentEvents = useRef([]);
+    const deletedComments = useRef(new Set());
+    useEffect(() => {
+        currentPostId.current = id;
+        deletedComments.current = new Set();
+        return () => { currentPostId.current = null; };
+    }, [id]);
 
     // ! NUOVO: utente loggato, ci serve per inviare commenti e mostrare l'avatar di chi commenta
     const { user } = useAuth();
@@ -61,41 +71,64 @@ export default function PostDetail() {
     // ! Senza useCallback, ad ogni render di PostDetail verrebbe creata una nuova funzione,
     // ! causando l'effetto in useSocket di smontare e rimontare il listener continuamente.
     const handleCommentReceived = useCallback((newComment) => {
+        if (newComment.postId !== id) return;
+        commentEvents.current.push(newComment);
         // REST e broadcast possono arrivare in qualsiasi ordine: evitiamo duplicati tramite _id.
         setComments(prev => prev.some(c => c._id === newComment._id) ? prev : [...prev, newComment]);
-    }, []); // [] = nessuna dipendenza, la funzione non cambia mai
+    }, [id]);
+
+    const syncComments = useCallback(async signal => {
+        const request = ++commentRequest.current;
+        const events = [];
+        commentEvents.current = events;
+        const data = await getComments(id);
+        if (!signal.aborted && currentPostId.current === id && request === commentRequest.current) {
+            setComments(mergeRealtime(data, events, 'postId', id).filter(c => !deletedComments.current.has(c._id)));
+        }
+    }, [id]);
 
     // ! NUOVO REAL-TIME: usiamo l'hook useSocket.
     // - I primi due parametri (chat) sono null perché PostDetail non usa la chat
     // - Passiamo l'id del post corrente come activePostId
     // - Passiamo handleCommentReceived come callback per i commenti in arrivo
     // Il server invia gli aggiornamenti dopo il salvataggio REST.
-    useSocket(null, null, id, handleCommentReceived);
+    useSocket(null, null, id, handleCommentReceived, syncComments);
 
     // ! NUOVO: al montaggio del componente (o quando cambia l'ID nell'URL)
     // carichiamo il post e i suoi commenti dal backend in parallelo con Promise.all.
     // Promise.all aspetta che ENTRAMBE le chiamate finiscano prima di aggiornare lo stato,
     // così evitiamo render parziali con dati a metà.
     useEffect(() => {
+        let cancelled = false;
+        const request = ++commentRequest.current;
+        const events = [];
+        commentEvents.current = events;
         async function loadPostAndComments() {
             try {
                 setLoading(true);
+                setError(null);
+                setComments([]);
                 // Eseguiamo le due chiamate in parallelo per risparmiare tempo
                 const [postData, commentsData] = await Promise.all([
                     getPostById(id),   // GET /api/v1/posts/:id
                     getComments(id)    // GET /api/v1/posts/:id/comments
                 ]);
+                if (cancelled) return;
                 setPost(postData);
-                setComments(commentsData);
+                if (request === commentRequest.current) {
+                    setComments(mergeRealtime(commentsData, events, 'postId', id).filter(c => !deletedComments.current.has(c._id)));
+                }
             } catch (err) {
+                if (cancelled) return;
                 setError('Impossibile caricare il post. Riprova più tardi.');
                 console.error('Errore nel caricamento del post:', err);
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
 
         loadPostAndComments();
+        return () => { cancelled = true; };
     }, [id]); // Rieseguiamo se l'ID cambia (es. navigazione tra post diversi)
 
     // ! NUOVO: funzione per inviare un nuovo commento.
@@ -109,6 +142,8 @@ export default function PostDetail() {
             // ! createComment ora restituisce direttamente il commento (non wrappato),
             // ! grazie al fix nel commentServices.js
             const newComment = await createComment(id, { text: commentText });
+            if (currentPostId.current !== id) return;
+            commentEvents.current.push(newComment);
 
             // Aggiungiamo il nuovo commento in fondo alla lista senza ricaricare tutto.
             // ! Questo aggiorna l'UI dell'utente che ha scritto il commento (ottimistico).
@@ -129,6 +164,8 @@ export default function PostDetail() {
     async function handleDeleteComment(commentId) {
         try {
             await deleteComment(id, commentId);
+            if (currentPostId.current !== id) return;
+            deletedComments.current.add(commentId);
             // Aggiorniamo la lista locale rimuovendo il commento eliminato
             setComments(prev => prev.filter(c => c._id !== commentId));
         } catch (err) {

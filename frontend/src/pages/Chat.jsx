@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { mergeRealtime } from "../utils/realtime";
 
 // ! REAL-TIME: importiamo il nostro hook custom per la gestione del socket
 import { useSocket } from "../hooks/useSocket"; import { Box, Divider, IconButton, Stack, TextField, Typography } from "@mui/material";
@@ -41,6 +42,24 @@ export default function Chat() {
     const [activeChat, setActiveChat] = useState(null);   // La conversazione attualmente aperta
     const [messages, setMessages] = useState([]);         // Messaggi della conversazione aperta
     const [newMessageText, setNewMessageText] = useState(''); // Testo in digitazione nell'input
+    const selectedChatId = useRef(null);
+    const messageRequest = useRef(0);
+    const messageEvents = useRef([]);
+    useEffect(() => () => {
+        selectedChatId.current = null;
+        messageRequest.current++;
+    }, []);
+
+    const loadMessages = useCallback(async (chatId, signal) => {
+        const request = ++messageRequest.current;
+        const events = [];
+        messageEvents.current = events;
+        const msgs = await getMessages(chatId);
+        if (signal?.aborted || request !== messageRequest.current || selectedChatId.current !== chatId) return;
+        setMessages(mergeRealtime(msgs, events, 'chatID', chatId));
+    }, []);
+    const activeChatId = activeChat?._id;
+    const syncMessages = useCallback(signal => loadMessages(activeChatId, signal), [activeChatId, loadMessages]);
 
     // Testo digitato nella barra di ricerca della sidebar.
     // Viene usato per filtrare sia i following che le chat già esistenti.
@@ -52,6 +71,8 @@ export default function Chat() {
     //  (ogni render -> nuova funzione -> useEffect si riesegue -> nuovo render -> ...).
     // useCallback garantisce che la funzione venga ricreata SOLO se setMessages cambia (mai).
     const handleReceiveMessage = useCallback((message) => {
+        if (message.chatID !== selectedChatId.current) return;
+        messageEvents.current.push(message);
         // REST e broadcast possono arrivare in qualsiasi ordine: inseriamo ogni _id una sola volta.
         setMessages(prev => prev.some(m => m._id === message._id) ? prev : [...prev, message]);
     }, [setMessages]);
@@ -60,7 +81,7 @@ export default function Chat() {
     // - activeChatId: quando cambia, il socket cambia automaticamente stanza
     // - handleReceiveMessage: viene chiamata ogni volta che arriva un messaggio real-time
     // Il server invia gli aggiornamenti dopo il salvataggio REST.
-    useSocket(activeChat?._id ?? null, handleReceiveMessage);
+    useSocket(activeChatId ?? null, handleReceiveMessage, null, null, syncMessages);
 
     // Carichiamo sia le chat esistenti sia la lista dei following
     // all'apertura della pagina (array vuoto = esegui solo al primo render).
@@ -100,10 +121,12 @@ export default function Chat() {
 
     // Carica i messaggi di una chat e la imposta come attiva.
     async function handleSelectChat(chat) {
+        selectedChatId.current = chat._id;
+        setMessages([]);
+        setNewMessageText('');
         setActiveChat(chat);
         try {
-            const msgs = await getMessages(chat._id);
-            setMessages(msgs);
+            await loadMessages(chat._id);
         } catch (error) {
             console.error("Errore nel caricamento dei messaggi:", error);
         }
@@ -161,6 +184,8 @@ export default function Chat() {
         try {
             // 1. Salviamo il messaggio nel database tramite REST API (come prima)
             const newMsg = await createMessage(activeChat._id, { content: newMessageText });
+            if (selectedChatId.current !== activeChat._id) return;
+            messageEvents.current.push(newMsg);
 
             // 2. Aggiorniamo la nostra UI localmente per un'esperienza immediata,
             //    senza aspettare che il socket ci rimandi indietro il messaggio.
@@ -331,7 +356,12 @@ export default function Chat() {
                         {/* HEADER: Nome dell'utente con cui stiamo chattando */}
                         <Stack direction='row' spacing={2} sx={{ p: 1 }}>
                             <IconButton
-                                onClick={() => setActiveChat(null)}
+                                onClick={() => {
+                                    selectedChatId.current = null;
+                                    messageRequest.current++;
+                                    setActiveChat(null);
+                                    setMessages([]);
+                                }}
                                 sx={{ display: { xs: 'flex', md: 'none' } }}>
                                 <ArrowBackIcon />
                             </IconButton>

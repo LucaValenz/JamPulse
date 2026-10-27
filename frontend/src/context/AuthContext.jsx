@@ -11,7 +11,7 @@
 // può accedere a queste informazioni semplicemente invocando il custom hook 'useAuth()'.
 // ====================================================================================================================
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { login as loginService, register as registerService, logoutService } from "../services/authServices";
 
 // 1. Creazione dell'oggetto Context (il contenitore globale dei dati)
@@ -29,6 +29,20 @@ export function AuthProvider({ children }) {
 
     // Inizializzazione dello stato 'token' leggendo l'Access Token dal localStorage
     const [token, setToken] = useState(() => localStorage.getItem('token'));
+
+    useEffect(() => {
+        const syncSession = () => {
+            setToken(localStorage.getItem('token'));
+            const saved = localStorage.getItem('user');
+            setUser(saved ? JSON.parse(saved) : null);
+        };
+        window.addEventListener('session-changed', syncSession);
+        window.addEventListener('storage', syncSession);
+        return () => {
+            window.removeEventListener('session-changed', syncSession);
+            window.removeEventListener('storage', syncSession);
+        };
+    }, []);
 
     /**
      * Esegue il login tramite authServices.

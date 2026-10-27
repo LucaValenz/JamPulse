@@ -5,7 +5,7 @@
 // Gestisce inoltre la persistenza locale dei token di sessione (token e refreshToken) nel localStorage.
 // ====================================================================================================================
 
-import axios from '../axios'
+import axios, { refreshSession, notifySessionChanged } from '../axios'
 
 /**
  * Invia i dati di registrazione di un nuovo utente al backend.
@@ -49,16 +49,9 @@ export async function login(userData) {
  * @returns {Promise<Object>} Risposta del server contenente la nuova coppia di token
  */
 export async function refreshTokenService(refreshToken) {
-    const response = await axios.post('/auth/refresh', { refreshToken })
-
-    if (response.data.token) {
-        localStorage.setItem('token', response.data.token)
-    }
-    if (response.data.refreshToken) {
-        localStorage.setItem('refreshToken', response.data.refreshToken)
-    }
-
-    return response.data
+    if (refreshToken !== localStorage.getItem('refreshToken')) throw new Error('Sessione non valida')
+    const token = await refreshSession()
+    return { token, accessToken: token, refreshToken: localStorage.getItem('refreshToken') }
 }
 
 /**
@@ -71,6 +64,7 @@ export async function refreshTokenService(refreshToken) {
  */
 export async function logoutService() {
     const refreshToken = localStorage.getItem('refreshToken')
+    localStorage.removeItem('refreshToken')
     try {
         if (refreshToken) {
             await axios.post('/auth/logout', { refreshToken })
@@ -82,5 +76,6 @@ export async function logoutService() {
         localStorage.removeItem('token')
         localStorage.removeItem('refreshToken')
         localStorage.removeItem('user')
+        notifySessionChanged()
     }
 }
