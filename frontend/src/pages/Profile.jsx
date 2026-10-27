@@ -1,6 +1,6 @@
 // frontend/src/pages/Profile.jsx
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Avatar, Button, CircularProgress, Stack, Typography, Box, TextField, Chip, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
 import PostCard from "../components/PostCard";
 import MultiSelectFilter from "../components/MultiSelectFilter";
@@ -22,6 +22,7 @@ export default function Profile() {
     // Se siamo su /profile/:id, id sarà l'ID dell'utente da visualizzare.
     // Se siamo su /profile (senza ID), id sarà undefined → stiamo guardando il nostro profilo.
     const { id } = useParams();
+    const navigate = useNavigate();
 
     // Dal contesto di autenticazione prendiamo l'utente attualmente loggato.
     // Serve per confrontare se il profilo visualizzato è il nostro oppure no.
@@ -230,6 +231,16 @@ export default function Profile() {
                     >
                         {/* Mostriamo testo diverso in base allo stato isFollowing */}
                         {isFollowing ? "Smetti di seguire" : "Segui"}
+                    </Button>
+                    {/* SCRIVI DAL PROFILO: passiamo il destinatario nello state di navigazione.
+                        Chat.jsx lo legge e apre la conversazione tramite handleSelectUser.
+                        Questo blocco appare soltanto nei profili degli altri utenti. */}
+                    <Button
+                        variant="outlined"
+                        sx={{ width: '40%' }}
+                        onClick={() => navigate('/chat', { state: { targetUser: profileUser } })}
+                    >
+                        Scrivi
                     </Button>
                 </Stack>
             )}

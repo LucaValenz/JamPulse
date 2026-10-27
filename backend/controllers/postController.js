@@ -1,5 +1,7 @@
 const Post = require('../models/Post')
 const User = require('../models/User')
+// La gestione dei file resta separata dalla persistenza dei documenti MongoDB.
+const { savePostImage, removePostImage } = require('../services/postImages')
 
 // GET /posts
 // Restituisce tutti i post, dal più recente al più vecchio.
@@ -50,27 +52,47 @@ async function getPostById(req, res) {
 // L'ID dell'autore lo prendiamo da req.user.id (aggiunto dal middleware JWT),
 // così l'utente non può fingere di essere qualcun altro.
 async function createPost(req, res) {
+    // Conserviamo il percorso per poter annullare l'upload se MongoDB fallisce.
+    let uploadedMedia;
     try {
-        const { content, media } = req.body
+        // express.json gestisce i client JSON; Multer popola body e file nei multipart.
+        const { content, media } = req.body || {}
 
         // Validazione essenziale: il contenuto del post non può essere vuoto
-        if (!content || !content.trim()) {
+        if (typeof content !== 'string' || !content.trim()) {
             return res.status(400).json({ message: 'Il contenuto del post è obbligatorio' })
         }
+
+        // Controlliamo il tipo prima di usare trim: il body può essere costruito
+        // anche da un client diverso dal nostro frontend.
+        if (media !== undefined && typeof media !== 'string') {
+            return res.status(400).json({ message: 'URL immagine non valido' })
+        }
+        // File e URL sono alternative: rifiutiamo richieste con entrambe le fonti.
+        if (req.file && media?.trim()) {
+            return res.status(400).json({ message: 'Scegli un file oppure un URL immagine.' })
+        }
+        // Scriviamo su disco solo dopo aver validato i campi testuali.
+        if (req.file) uploadedMedia = await savePostImage(req.file)
 
         // Creiamo il documento Post con i dati del body e l'ID dell'autore dal token
         const newPost = new Post({
             userID: req.user.id,
             content: content.trim(),
-            media: media || '' // media è opzionale: se non arriva dal client usiamo stringa vuota
+            // Un unico campo mantiene compatibili feed, dettaglio e post solo testuali.
+            media: uploadedMedia || media?.trim() || ''
         })
 
         await newPost.save()
 
         res.status(201).json(newPost)
     } catch (error) {
+        // File e documento non condividono una transazione: compensiamo un errore
+        // di salvataggio eliminando l'immagine appena creata.
+        if (uploadedMedia) await removePostImage(uploadedMedia)
         console.error('ERRORE CREATE POST:', error)
-        res.status(500).json({ message: 'Errore nella creazione del post' })
+        // Esporremo il motivo della validazione, ma non i dettagli degli errori interni.
+        res.status(error.status || 500).json({ message: error.status === 400 ? error.message : 'Errore nella creazione del post' })
     }
 }
 
@@ -133,6 +155,9 @@ async function deletePost(req, res) {
             return res.status(403).json({ message: 'Non sei autorizzato a eliminare questo post' })
 
         await Post.findByIdAndDelete(req.params.id)
+        // Dopo la cancellazione controlliamo se altri post riutilizzano l'immagine.
+        // removePostImage ignora gli URL esterni e rimuove solo i nostri file locali.
+        if (!await Post.exists({ media: post.media })) await removePostImage(post.media)
 
         res.json({ message: 'Post eliminato con successo' })
     } catch (error) {

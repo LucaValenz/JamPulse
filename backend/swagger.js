@@ -322,7 +322,7 @@ const options = {
                 post: {
                     tags: ["Posts"],
                     summary: "Crea un nuovo post",
-                    description: "Crea un post assegnandolo automaticamente all'utente loggato.",
+                    description: "Crea un post per l'utente loggato. Accetta un URL immagine oppure un file JPG, PNG, GIF o WebP fino a 5 MB (campo image).",
                     security: [{ bearerAuth: [] }],
                     requestBody: {
                         required: true,
@@ -335,11 +335,26 @@ const options = {
                                         media: { type: "string", example: "https://link-immagine.com/foto.jpg" }
                                     }
                                 }
+                            },
+                            // File binario e testo viaggiano nello stesso form; image
+                            // corrisponde al campo accettato dal middleware Multer.
+                            "multipart/form-data": {
+                                schema: {
+                                    type: "object",
+                                    required: ["content"],
+                                    properties: {
+                                        content: { type: "string" },
+                                        media: { type: "string", description: "URL alternativo al file image" },
+                                        image: { type: "string", format: "binary", description: "JPG, PNG, GIF o WebP, massimo 5 MB" }
+                                    }
+                                }
                             }
                         }
                     },
                     responses: {
                         201: { description: "Post creato con successo" },
+                        400: { description: "Contenuto o immagine non validi" },
+                        413: { description: "Immagine superiore a 5 MB" },
                         500: { description: "Errore interno del server" }
                     }
                 }

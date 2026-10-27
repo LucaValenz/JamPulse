@@ -1,109 +1,144 @@
-import { Alert, Button, Card, CircularProgress, Stack, TextField, Typography, } from "@mui/material";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { createPost } from "../services/postServices";
+﻿import { Alert, Box, Button, Card, CircularProgress, Stack, TextField, Typography } from '@mui/material';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createPost } from '../services/postServices';
+
+// Stessi formati e limite del backend: il controllo locale dà un feedback immediato,
+// ma la validazione del server resta necessaria per qualsiasi client dell'API.
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 export default function CreatePost() {
     const navigate = useNavigate();
-
-    // Testo della descrizione digitato dall'utente
+    // Campi controllati del form. media contiene l'URL remoto alternativo al file.
     const [content, setContent] = useState('');
-
-    // ! NUOVO: URL dell'immagine.
-    // Per ora gestiamo l'immagine come URL testuale inserito dall'utente,
-    // perché l'upload vero (inviare il file binario al server e salvarlo)
-    // richiede una gestione separata con multer o un servizio cloud come Cloudinary.
-    // È una scelta deliberata: prima facciamo funzionare il flusso base, poi aggiungiamo l'upload.
     const [media, setMedia] = useState('');
-
-    // Feedback visivo durante l'invio: blocca il bottone e mostra uno spinner
+    // image contiene { file, preview }: il File da inviare e l'URL locale dell'anteprima.
+    const [image, setImage] = useState(null);
+    // loading blocca modifiche e invii ripetuti; error mostra il motivo del fallimento.
     const [loading, setLoading] = useState(false);
-
-    // Messaggio di errore da mostrare se la chiamata al backend fallisce
     const [error, setError] = useState(null);
 
-    // ! NUOVO: funzione chiamata quando l'utente clicca "Condividi il post".
-    // È async perché al suo interno aspettiamo la risposta del backend con await.
-    async function handleSubmit(e) {
-        // e.preventDefault() blocca il comportamento default del browser:
-        // senza di esso, il form farebbe un reload della pagina all'invio,
-        // perdendo tutto lo stato React e interrompendo la chiamata al backend.
-        e.preventDefault();
+    // Gli URL creati con createObjectURL occupano risorse nel browser.
+    // Il cleanup libera quello precedente quando cambia image o la pagina si smonta.
+    useEffect(() => () => {
+        if (image) URL.revokeObjectURL(image.preview);
+    }, [image]);
 
-        // Validazione minima: il contenuto è obbligatorio
-        if (!content.trim()) return;
+    // La selezione prepara file e anteprima; l'upload avviene solo alla pubblicazione.
+    function handleImageChange(event) {
+        const file = event.target.files?.[0];
+        event.target.value = ''; // Consente di riselezionare lo stesso file dopo un errore.
+        if (!file) return; // Chiudere il selettore senza scegliere conserva lo stato corrente.
+        if (!IMAGE_TYPES.includes(file.type)) {
+            setError('Seleziona un’immagine JPG, PNG, GIF o WebP.');
+            return;
+        }
+        if (file.size > MAX_IMAGE_SIZE) {
+            setError('L’immagine non può superare 5 MB.');
+            return;
+        }
+        // Un file valido sostituisce l'eventuale URL: le due fonti sono alternative.
+        setError(null);
+        setMedia('');
+        // L'URL blob serve solo all'anteprima: al server inviamo il File originale.
+        setImage({ file, preview: URL.createObjectURL(file) });
+    }
 
+    // Invia testo e immagine in una sola richiesta autenticata tramite il service.
+    async function handleSubmit(event) {
+        event.preventDefault(); // Evita il reload del browser all'invio del form HTML.
+        if (loading || !content.trim()) return;
         setLoading(true);
         setError(null);
 
         try {
-            // Chiamiamo POST /api/v1/posts con i dati del form.
-            // Il service aggiunge automaticamente il token JWT nell'header
-            // grazie all'interceptor configurato in axios.js.
-            // Il backend legge l'ID dell'autore dal token, non dal body.
-            await createPost({ content: content.trim(), media: media.trim() });
-
-            // Post creato con successo: torniamo alla Home per vederlo nel feed
-            navigate('/');
+            // FormData permette di inviare dati binari insieme al testo.
+            // Non impostiamo Content-Type manualmente: Axios/browser aggiungono
+            // multipart/form-data con il boundary necessario a separare le parti.
+            const data = new FormData();
+            data.append('content', content.trim());
+            // image è il nome atteso da Multer; media mantiene il supporto agli URL.
+            if (image) data.append('image', image.file);
+            else data.append('media', media.trim());
+            await createPost(data);
+            navigate('/'); // Torniamo al feed solo dopo la conferma del server.
         } catch (err) {
-            // Mostriamo il messaggio specifico inviato dal backend (es. validazione) o un fallback chiaro
-            const errorMessage = err.response?.data?.message || 'Errore durante la pubblicazione. Riprova.';
-            setError(errorMessage);
-            console.error('Errore nella creazione del post:', err);
+            // Conserviamo testo e file, così l'utente può correggere o riprovare.
+            setError(err.response?.data?.message || 'Errore durante la pubblicazione. Riprova.');
         } finally {
-            setLoading(false);
+            setLoading(false); // Riabilita il form anche in caso di errore.
         }
     }
 
     return (
-        <Stack sx={{ height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-            <Card sx={{ width: '80%', borderRadius: 5, padding: 5 }}>
-                {/* ! MODIFICATO: da <form> a onSubmit su Stack.
-                    I form HTML con <form> in React + MUI possono causare comportamenti anomali,
-                    specialmente con i Dialog. È più idiomatico gestire l'invio
-                    con onSubmit direttamente sullo Stack che funge da contenitore. */}
-                <Stack spacing={5} component="form" onSubmit={handleSubmit}>
+        <Stack sx={{ minHeight: '100%', justifyContent: 'center', alignItems: 'center', py: 3 }}>
+            <Card sx={{ width: '80%', borderRadius: 5, p: { xs: 3, sm: 5 } }}>
+                {/* Stack genera un form HTML, mantenendo invio e validazione nativi. */}
+                <Stack spacing={3} component="form" onSubmit={handleSubmit}>
                     <Typography variant="h5" align="center" color="primary" sx={{ fontWeight: 'bold' }}>
                         Crea un nuovo post
                     </Typography>
 
-                    {/* Messaggio di errore: appare solo se error non è null */}
+                    {/* Qui compaiono sia gli errori locali sia quelli restituiti dall'API. */}
                     {error && <Alert severity="error">{error}</Alert>}
 
-                    {/* ! MODIFICATO: ora è un controlled input.
-                        value e onChange collegano il campo allo stato React,
-                        così possiamo leggere il testo al momento dell'invio. */}
                     <TextField
                         label="Scrivi la descrizione del post"
                         multiline
                         minRows={4}
                         fullWidth
                         required
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                    />
-
-                    {/* ! MODIFICATO: campo URL immagine al posto dell'input file.
-                        Semplifica il flusso iniziale: l'utente incolla un link a un'immagine
-                        invece di caricare un file. Il campo non è required perché i post
-                        possono essere solo testuali. */}
-                    <TextField
-                        label="URL immagine (opzionale)"
-                        fullWidth
-                        value={media}
-                        onChange={(e) => setMedia(e.target.value)}
-                        placeholder="https://esempio.com/foto.jpg"
-                    />
-
-                    {/* ! MODIFICATO: il bottone mostra uno spinner durante il caricamento
-                        ed è disabilitato per evitare invii doppi.
-                        disabled={loading} impedisce click multipli mentre la chiamata è in corso. */}
-                    <Button
-                        type="submit"
-                        variant="contained"
-                        size="large"
                         disabled={loading}
-                    >
+                        value={content}
+                        onChange={event => setContent(event.target.value)}
+                    />
+
+                    {/* La label apre l'input file nascosto. accept filtra il selettore,
+                        mentre handleImageChange e il backend verificano i file ricevuti. */}
+                    <Stack spacing={1}>
+                        <Button component="label" variant="outlined" disabled={loading}>
+                            {image ? 'Cambia immagine' : 'Carica immagine dal dispositivo'}
+                            <input
+                                type="file"
+                                accept={IMAGE_TYPES.join(',')}
+                                hidden
+                                disabled={loading}
+                                onChange={handleImageChange}
+                            />
+                        </Button>
+                        <Typography variant="caption" color="text.secondary">
+                            Immagine opzionale · JPG, PNG, GIF o WebP · Massimo 5 MB
+                        </Typography>
+                        {/* L'anteprima usa il file locale senza chiamare il server. */}
+                        {image && (
+                            <>
+                                <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{image.file.name}</Typography>
+                                <Box
+                                    component="img"
+                                    src={image.preview}
+                                    alt="Anteprima dell’immagine selezionata"
+                                    sx={{ maxHeight: 320, maxWidth: '100%', objectFit: 'contain', borderRadius: 2 }}
+                                />
+                                <Button disabled={loading} onClick={() => setImage(null)}>Rimuovi immagine</Button>
+                            </>
+                        )}
+                    </Stack>
+
+                    {/* L'URL resta disabilitato finché è presente un file, evitando ambiguità. */}
+                    <TextField
+                        label="Oppure inserisci un URL immagine"
+                        type="url"
+                        fullWidth
+                        disabled={loading || Boolean(image)}
+                        value={media}
+                        onChange={event => setMedia(event.target.value)}
+                        placeholder="https://esempio.com/foto.jpg"
+                        helperText={image ? 'Rimuovi il file selezionato per utilizzare un URL.' : 'Opzionale'}
+                    />
+
+                    {/* Blocca invii vuoti o ripetuti e mostra l'attesa della risposta. */}
+                    <Button type="submit" variant="contained" size="large" disabled={loading || !content.trim()}>
                         {loading ? <CircularProgress size={24} color="inherit" /> : 'Condividi il post'}
                     </Button>
                 </Stack>

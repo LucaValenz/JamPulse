@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { mergeRealtime } from "../utils/realtime";
 
 // ! REAL-TIME: importiamo il nostro hook custom per la gestione del socket
-import { useSocket } from "../hooks/useSocket"; import { Box, Divider, IconButton, Stack, TextField, Typography } from "@mui/material";
+import { useSocket } from "../hooks/useSocket"; import { Box, Divider, IconButton, ListItemButton, Stack, TextField, Typography } from "@mui/material";
 
 import SearchBar from "../components/SearchBar";
 import UserBadge from "../components/UserBadge";
@@ -14,16 +14,17 @@ import MessageBubble from "../components/MessageBubble";
 import { useAuth } from "../context/AuthContext";
 import { getChats, createChat } from "../services/chatServices";
 import { getMessages, createMessage } from "../services/messageServices";
-import { getFollowing } from "../services/userServices";
+import { getFollowing, getUsers } from "../services/userServices";
 
 // useLocation ci permette di leggere lo "state" passato da navigate()
 // quando arriviamo in questa pagina da un'altra (es. dal tasto "Scrivi" in Search)
 import { useLocation, useNavigate } from 'react-router-dom';
 
 // Pagina dedicata alla sezione chat dell'applicazione.
-// La sidebar sinistra mostra due sezioni:
+// La sidebar sinistra mostra tre sezioni:
 //   1. Gli utenti che segui (puoi avviare o aprire una chat con loro)
 //   2. Le chat arrivate da utenti che NON segui (stile "messaggi richiesta")
+//   3. Altri utenti trovati tramite ricerca, con cui avviare una conversazione
 export default function Chat() {
     // Recuperiamo l'utente loggato dal contesto di autenticazione.
     // Ci serve per identificare quale parte del messaggio è "nostra"
@@ -31,7 +32,7 @@ export default function Chat() {
     const { user } = useAuth();
 
     // location.state può contenere un oggetto { targetUser } se arriviamo
-    // dalla pagina Cerca tramite il tasto "Scrivi". Se arriviamo navigando
+    // dalla pagina Cerca o da un profilo tramite il tasto "Scrivi". Se arriviamo navigando
     // normalmente, location.state è null.
     const location = useLocation();
     const navigate = useNavigate()
@@ -39,6 +40,13 @@ export default function Chat() {
     // --- STATI PRINCIPALI ---
     const [chats, setChats] = useState([]);         // Tutte le chat di cui siamo partecipanti (dal backend)
     const [following, setFollowing] = useState([]); // Gli utenti che seguiamo
+    // Distingue i dati ancora da caricare da liste caricate ma vuote.
+    // Serve ad aprire la chat dal tasto "Scrivi" anche senza chat o following.
+    const [dataLoaded, setDataLoaded] = useState(false);
+    // Elenco per la ricerca globale e relativi stati di caricamento ed errore.
+    const [users, setUsers] = useState([]);
+    const [usersLoading, setUsersLoading] = useState(true);
+    const [usersError, setUsersError] = useState(null);
     const [activeChat, setActiveChat] = useState(null);   // La conversazione attualmente aperta
     const [messages, setMessages] = useState([]);         // Messaggi della conversazione aperta
     const [newMessageText, setNewMessageText] = useState(''); // Testo in digitazione nell'input
@@ -62,8 +70,32 @@ export default function Chat() {
     const syncMessages = useCallback(signal => loadMessages(activeChatId, signal), [activeChatId, loadMessages]);
 
     // Testo digitato nella barra di ricerca della sidebar.
-    // Viene usato per filtrare sia i following che le chat già esistenti.
+    // Viene usato per filtrare following, chat esistenti e altri utenti.
     const [searchText, setSearchText] = useState('');
+    // Ignoriamo spazi iniziali/finali e differenze tra maiuscole e minuscole.
+    const searchQuery = searchText.trim().toLowerCase();
+
+    // --- RICERCA UTENTI: caricamento elenco ---
+    // La ricerca usa lo stesso elenco utenti della pagina Cerca.
+    // Carichiamo una volta all'apertura; digitando filtriamo localmente con otherUsers.
+    // Un errore qui non deve impedire il caricamento delle conversazioni.
+    useEffect(() => {
+        let cancelled = false;
+        async function loadUsers() {
+            try {
+                const data = await getUsers();
+                if (!cancelled) setUsers(data);
+            } catch (error) {
+                console.error("Errore nella ricerca utenti:", error);
+                if (!cancelled) setUsersError('Impossibile caricare gli altri utenti. Riprova riaprendo la chat.');
+            } finally {
+                if (!cancelled) setUsersLoading(false);
+            }
+        }
+        loadUsers();
+        // Se usciamo dalla pagina, ignoriamo la risposta ancora in arrivo.
+        return () => { cancelled = true; };
+    }, []);
 
     // REAL-TIME: callback chiamata dal socket quando arriva un messaggio salvato.
     //  useCallback è fondamentale qui: senza di esso, ad ogni re-render di Chat verrebbe creata
@@ -96,6 +128,7 @@ export default function Chat() {
                 ]);
                 setChats(chatsData);
                 setFollowing(followingData);
+                setDataLoaded(true);
             } catch (error) {
                 console.error("Errore nel caricamento dei dati iniziali:", error);
             }
@@ -132,12 +165,14 @@ export default function Chat() {
         }
     }
 
-    // Gestisce il click su un utente che seguiamo ma con cui non abbiamo ancora una chat.
+    // --- APERTURA CHAT: handleSelectUser ---
+    // Apre una conversazione con un utente, anche se non lo seguiamo.
+    // Usata da following, risultati "Altri utenti" e tasto "Scrivi" di ricerca/profilo.
     // Chiama createChat sul backend: se la chat esiste già la riusa, altrimenti la crea.
-    async function handleSelectFollowing(followedUser) {
+    async function handleSelectUser(targetUser) {
         try {
             // createChat è già idempotente lato backend: se la chat esiste, la ritorna.
-            const chat = await createChat({ targetUserId: followedUser._id });
+            const chat = await createChat({ targetUserId: targetUser._id });
 
             // Aggiorniamo la lista locale di chat se quella ritornata non c'era già
             setChats(prev => {
@@ -154,8 +189,7 @@ export default function Chat() {
 
     // Quando i dati iniziali (chats + following) sono pronti E siamo arrivati
     // qui tramite il tasto "Scrivi", apriamo subito la chat con quell'utente.
-    // Le dipendenze [chats, following] garantiscono che questo venga eseguito
-    // solo DOPO che i dati sono stati caricati, non prima.
+    // dataLoaded distingue il caricamento iniziale da una lista vuota di contatti e chat.
     useEffect(() => {
         const targetUser = location.state?.targetUser;
 
@@ -163,17 +197,17 @@ export default function Chat() {
         if (!targetUser) return;
 
         // Se i dati non sono ancora pronti, aspettiamo il prossimo render
-        if (chats.length === 0 && following.length === 0) return;
+        if (!dataLoaded) return;
 
         // Avviamo o apriamo la chat con l'utente target automaticamente
-        handleSelectFollowing(targetUser);
+        handleSelectUser(targetUser);
 
         // Puliamo lo state di navigazione per evitare che al refresh
         // si riapra di nuovo la stessa chat automaticamente.
         // replace: true sovrascrive la voce nella cronologia del browser.
-        window.history.replaceState({}, '');
+        navigate(location.pathname, { replace: true, state: null });
 
-    }, [chats, following]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [dataLoaded, location.state, location.pathname, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Invia un nuovo messaggio nella chat attiva.
     // Invia un nuovo messaggio nella chat attiva.
@@ -209,7 +243,7 @@ export default function Chat() {
         const other = getOtherUser(chat);
         if (!other || !isFollowing(other._id)) return false;
         // Se searchText è vuoto, tutti passano; altrimenti filtriamo per username
-        return other.username.toLowerCase().includes(searchText.toLowerCase());
+        return other.username.toLowerCase().includes(searchQuery);
     });
 
     // Le chat "richieste" sono quelle da utenti che non seguiamo.
@@ -217,7 +251,7 @@ export default function Chat() {
     const requestChats = chats.filter(chat => {
         const other = getOtherUser(chat);
         if (!other || isFollowing(other._id)) return false;
-        return other.username.toLowerCase().includes(searchText.toLowerCase());
+        return other.username.toLowerCase().includes(searchQuery);
     });
 
     // Following senza chat ancora aperta, filtrati per testo di ricerca.
@@ -227,8 +261,23 @@ export default function Chat() {
             return other && other._id === f._id;
         });
         if (hasChat) return false;
-        return f.username.toLowerCase().includes(searchText.toLowerCase());
+        return f.username.toLowerCase().includes(searchQuery);
     });
+
+    // --- RICERCA UTENTI: filtro otherUsers ---
+    // Escludiamo noi stessi e chi compare già tra following o conversazioni.
+    // Set raccoglie gli ID senza duplicati e .has() verifica se un ID è presente.
+    const knownUserIds = new Set([
+        user?.id,
+        ...following.map(f => f._id),
+        ...chats.map(chat => getOtherUser(chat)?._id),
+    ]);
+    // Mostriamo risultati solo se c'è testo: svuotando Cerca la sezione scompare.
+    // Il filtro è uno stato derivato, ricalcolato quando cambiano testo o liste.
+    const otherUsers = searchQuery ? users.filter(candidate =>
+        !knownUserIds.has(candidate._id) &&
+        candidate.username.toLowerCase().includes(searchQuery)
+    ) : [];
 
     // --- RENDERING ---
     return (
@@ -285,7 +334,7 @@ export default function Chat() {
                     {followingWithoutChat.map((followedUser) => (
                         <Box
                             key={followedUser._id}
-                            onClick={() => handleSelectFollowing(followedUser)}
+                            onClick={() => handleSelectUser(followedUser)}
                             sx={{
                                 cursor: 'pointer',
                                 backgroundColor: 'transparent',
@@ -303,7 +352,7 @@ export default function Chat() {
                     {/* Messaggio di fallback se non seguiamo nessuno */}
                     {mainChats.length === 0 && followingWithoutChat.length === 0 && (
                         <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                            Non stai ancora seguendo nessuno.
+                            {searchQuery ? 'Nessun contatto corrispondente.' : 'Non stai ancora seguendo nessuno.'}
                         </Typography>
                     )}
                 </Stack>
@@ -340,6 +389,43 @@ export default function Chat() {
                                 );
                             })}
                         </Stack>
+                    </>
+                )}
+                {/* SEZIONE 3: ALTRI UTENTI - risultati della RICERCA UTENTI.
+                    Gestiamo caricamento, errore e nessun risultato.
+                    Selezionando una riga, handleSelectUser crea o riapre la chat. */}
+                {searchQuery && (
+                    <>
+                        <Divider />
+                        <Typography variant="caption" color="text.secondary" sx={{ px: 1, fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            Altri utenti
+                        </Typography>
+                        {usersLoading ? (
+                            <Typography role="status" variant="body2" sx={{ p: 2 }}>
+                                Ricerca utenti...
+                            </Typography>
+                        ) : usersError ? (
+                            <Typography role="alert" variant="body2" color="error" sx={{ p: 2 }}>
+                                {usersError}
+                            </Typography>
+                        ) : otherUsers.length > 0 ? (
+                            <Stack divider={<Divider />}>
+                                {otherUsers.map(candidate => (
+                                    <ListItemButton
+                                        key={candidate._id}
+                                        onClick={() => handleSelectUser(candidate)}
+                                        aria-label={`Scrivi a ${candidate.username}`}
+                                        sx={{ p: 0, borderRadius: 1 }}
+                                    >
+                                        <UserBadge username={candidate.username} userId={candidate._id} role={candidate.role} />
+                                    </ListItemButton>
+                                ))}
+                            </Stack>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                                Nessun altro utente trovato.
+                            </Typography>
+                        )}
                     </>
                 )}
             </Stack>

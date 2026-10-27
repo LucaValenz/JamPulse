@@ -31,6 +31,7 @@ const commentRoute = require('./routes/commentRoute');
 const messageRoute = require('./routes/messageRoute');
 const healthRoute = require('./routes/healthRoute');
 const verifyToken = require('./middlewares/authMiddleware');
+const { uploadDirectory, mediaPrefix } = require('./services/postImages');
 
 // * CREIAMO L'APPLICAZIONE EXPRESS -----------------------------------------------------------------------------------------------------------------------------------------------------------
 const app = express();
@@ -70,6 +71,16 @@ app.use((req, res, next) => { // !  questo serve per creare un middleware che st
 
 app.use('/api/v1/health', healthRoute); // ! questo serve per utilizzare la rotta per controllare lo stato del server
 app.use('/api/v1/auth', authRoute); // ! questo serve per utilizzare le rotte di autenticazione
+// Le immagini dei post sono pubbliche come le immagini esterne già presenti nel feed.
+// Questa rotta precede verifyToken perché gli elementi <img> non inviano il JWT
+// aggiunto dall'interceptor Axios. La creazione del post resta autenticata.
+app.use(mediaPrefix, express.static(uploadDirectory, {
+    index: false, // Non cercare un file index nelle directory richieste.
+    dotfiles: 'deny', // Non esporre eventuali file nascosti presenti nella cartella.
+    fallthrough: false, // Un file assente restituisce 404 senza passare alle rotte protette.
+    // Il browser deve rispettare il tipo del file senza tentare di reinterpretarlo.
+    setHeaders(res) { res.setHeader('X-Content-Type-Options', 'nosniff'); }
+}));
 app.use(verifyToken);
 app.use('/api/v1/chats', chatRoute); // ! questo serve per utilizzare le rotte dei chat
 app.use('/api/v1/posts', postRoute); // ! questo serve per utilizzare le rotte dei post

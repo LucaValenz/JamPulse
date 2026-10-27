@@ -40,6 +40,8 @@ build/Release
 
 # Dependency directories
 node_modules/
+# File caricati dagli utenti a runtime: non fanno parte del codice sorgente.
+backend/uploads/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
