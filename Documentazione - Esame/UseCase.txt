@@ -1,7 +1,11 @@
 @startuml JamPulse_UseCase_Diagram
 
-top to bottom direction
+left to right direction
+' Limita le dimensioni del PNG mantenendo le proporzioni.
+scale max 1600*1200
 skinparam packageStyle rectangle
+skinparam nodesep 15
+skinparam ranksep 25
 
 actor "Ospite (Non Autenticato)" as Guest
 actor "Utente Registrato" as User
@@ -14,14 +18,14 @@ rectangle "JamPulse Application" {
     package "Autenticazione" {
         usecase "Registrazione" as UC1
         usecase "Login" as UC2
-        usecase "Logout (Revoca Sessione)" as UC_Logout
+        usecase "Logout\n(Revoca Refresh Token\ne Chiusura Locale)" as UC_Logout
     }
 
     package "Gestione Profilo" {
         usecase "Visualizza Profilo Proprio" as UC3
         usecase "Modifica Profilo\n(Bio, Strumenti, Generi)" as UC4
         usecase "Visualizza Altri Profili" as UC5
-        usecase "Segui / Smetti di seguire utente" as UC6
+        usecase "Segui / Smetti\ndi seguire utente" as UC6
     }
 
     package "Post" {
@@ -29,12 +33,14 @@ rectangle "JamPulse Application" {
         usecase "Crea Nuovo Post" as UC9
         usecase "Elimina Proprio Post" as UC10
         usecase "Metti / Togli Like" as UC11
+        usecase "Modifica Proprio Post\n(tramite API)" as UC_UpdatePost
     }
 
     package "Commenti" {
         usecase "Visualizza Commenti" as UC12
         usecase "Aggiungi Commento" as UC13
         usecase "Elimina Proprio Commento" as UC14
+        usecase "Modifica Proprio Commento\n(tramite API)" as UC_UpdateComment
     }
 
     package "Ricerca" {
@@ -44,15 +50,17 @@ rectangle "JamPulse Application" {
 
     package "Chat" {
         usecase "Visualizza Lista Chat" as UC17
-        usecase "Crea o Recupera Chat Privata" as UC18
+        usecase "Crea o Recupera\nChat Privata" as UC18
         usecase "Invia / Ricevi Messaggi" as UC19
+        usecase "Modifica / Elimina\nProprio Messaggio\n(tramite API)" as UC_EditMessage
+        usecase "Elimina Chat di cui\nsi è Partecipanti\n(tramite API)" as UC_DeleteChat
     }
 
     package "Moderazione & Amministrazione" {
         usecase "Elimina Qualsiasi Post\n(Moderazione)" as UCA1
         usecase "Elimina Qualsiasi Commento\n(Moderazione)" as UCA2
-        usecase "Elimina Account Utente" as UCA3
-        usecase "Modifica Ruolo Utente\n(Assegna Ruolo Admin)" as UCA4
+        usecase "Elimina Altro Account Utente\n(tramite API)" as UCA3
+        usecase "Modifica Ruolo di un Altro Utente\n(user / admin, tramite API)" as UCA4
     }
 }
 
@@ -71,16 +79,20 @@ User --> UC8
 User --> UC9
 User --> UC10
 User --> UC11
+User --> UC_UpdatePost
 
 User --> UC12
 User --> UC13
 User --> UC14
+User --> UC_UpdateComment
 
 User --> UC15
 User --> UC16
 User --> UC17
 User --> UC18
 User --> UC19
+User --> UC_EditMessage
+User --> UC_DeleteChat
 
 ' Collegamenti Amministratore (azioni esclusive di moderazione/gestione)
 Admin --> UCA1
@@ -88,7 +100,12 @@ Admin --> UCA2
 Admin --> UCA3
 Admin --> UCA4
 
-' Relazioni opzionali di dipendenza (Include/Extend)
-UC12 ..> UC8 : <<include>>
-UC19 ..> UC17 : <<include>>
+note bottom of UC_Logout
+L'Access Token già emesso resta
+valido fino alla scadenza.
+end note
+
+note bottom of UC18
+L'applicazione crea conversazioni tra due utenti.
+end note
 @enduml

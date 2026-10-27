@@ -1,7 +1,11 @@
 @startuml Sequence_ChatMessage
 autonumber
 skinparam BoxPadding 10
-skinparam ParticipantPadding 10
+<style>
+participant {
+    Padding 10
+}
+</style>
 
 actor "Mittente" as Sender
 participant "Frontend Client 1" as FE1
@@ -10,24 +14,67 @@ participant "Socket.IO Server" as IO
 database "MongoDB" as DB
 participant "Frontend Client 2 (Destinatario)" as FE2
 
+== Connessione e accesso alla chat ==
+note over FE1, FE2
+Entrambi i client eseguono handshake e join.
+Di seguito è mostrato il flusso del destinatario.
+end note
+FE2 -> IO: Connessione Socket.IO con auth: { token: accessToken }
+IO -> IO: io.use: verifica firma, scadenza e algoritmo HS256
+alt Token mancante, scaduto, non valido o userId non valido
+    IO --> FE2: connect_error (connessione rifiutata)
+else Token valido
+    IO -> IO: socket.data.userId = decoded.userId
+    IO --> FE2: connect
+    FE2 -> IO: socket.emit('join_chat', chatId)
+    IO -> IO: Valida chatId (stringa ObjectId)
+    opt ID valido
+        IO -> DB: Chat.exists({ _id: chatId, participants: socket.data.userId })
+        DB --> IO: Chat autorizzata oppure null
+        opt Utente partecipante della chat
+            IO -> IO: socket.join('chat_' + chatId.toLowerCase())
+        end
+    end
+end
+
+== Invio e persistenza REST ==
 Sender -> FE1: Scrive e invia un messaggio nella chat
-FE1 -> BE: POST /api/v1/chats/:id/messages { content }
+FE1 -> BE: POST /api/v1/chats/:id/messages { content }\nAuthorization: Bearer <accessToken>
 activate BE
+BE -> BE: verifyToken: verifica JWT HS256 e ricava req.user.id
+alt Token mancante, scaduto o non valido
+    BE --> FE1: 401 Unauthorized
+else Token valido
+    BE -> BE: Verifica contenuto non vuoto
+    BE -> DB: Chat.findById(chatId)
+    DB --> BE: Chat e partecipanti
+    BE -> BE: Verifica che req.user.id sia tra i partecipanti
+    alt Contenuto/ID non valido, chat assente o utente non partecipante
+        BE --> FE1: 400 / 404 / 403 (nessun broadcast)
+    else Richiesta autorizzata
+        BE -> DB: Message.create({ chatID, senderID: req.user.id, content })
+        DB --> BE: Nuovo messaggio salvato
+        BE -> DB: Chat.findByIdAndUpdate(chatId, { updatedAt })
+        BE -> DB: newMessage.populate('senderID', 'username')
+        DB --> BE: Messaggio con autore popolato
 
-BE -> DB: Message.create({ chatID, senderID, content })
-activate DB
-DB --> BE: Restituisce il nuovo messaggio salvato
-deactivate DB
-
-BE -> DB: Chat.findByIdAndUpdate(chatID, { updatedAt })
-BE -> FE1: Restituisce 201 Created + message popolato
+        == Broadcast server-side ==
+        BE -> IO: req.app.get('io').to('chat_' + newMessage.chatID)\n.emit('receive_message', newMessage)
+        IO -> FE1: receive_message (se iscritto alla room)
+        IO -> FE2: receive_message (se iscritto alla room)
+        BE --> FE1: 201 Created + newMessage
+        FE1 -> FE1: Aggiorna lo stato da REST e socket\nDeduplica tramite _id, in qualsiasi ordine di arrivo
+        FE2 -> FE2: Aggiorna lo stato e mostra il messaggio\nDeduplica tramite _id
+    end
+end
 deactivate BE
 
-== Sincronizzazione Real-Time ==
-FE1 -> IO: socket.emit('send_message', { chatId, message })
-activate IO
-IO -> FE2: socket.to(chatId).emit('receive_message', message)
-deactivate IO
-
-FE2 -> FE2: Aggiorna lo stato locale e mostra il messaggio in tempo reale
+note over FE1, IO
+Nessun evento client send_message o send_comment.
+Il server trasmette solo i documenti persistiti dai controller REST.
+Ad ogni riconnessione useSocket rilegge il token e ripete il join.
+Il diagramma mostra il singolo scambio HTTP: su 401 Axios può
+rinnovare i token e ritentare. Il socket non avvia il refresh
+su connect_error; legge il token disponibile alla connessione.
+end note
 @enduml

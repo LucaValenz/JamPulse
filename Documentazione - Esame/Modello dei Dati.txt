@@ -14,7 +14,7 @@ Rappresenta l'utente registrato sulla piattaforma e gestisce sia le informazioni
 Rappresenta i contenuti multimediali o testuali pubblicati dagli utenti all'interno del feed sociale.
 	userID: ObjectId (Obbligatorio, Riferimento a User) — Identificativo dell'autore del post. 
 	content: String (Obbligatorio) — Il testo o la descrizione del post. 
-	media: String (Default: stringa vuota) — URL o percorso dell'eventuale allegato multimediale (immagini o file). 
+	media: String (Default: stringa vuota) — Nell'interfaccia contiene l'URL dell'immagine opzionale, visualizzata tramite elementi img. Lo schema accetta una stringa; non sono implementati upload di file o player audio/video.
 	likes: Array di ObjectId con riferimento a User (Default: array vuoto) — Elenco degli utenti che hanno messo "mi piace" al post (gestito tramite logica di toggle). 
 	timestamps: Gestito automaticamente (createdAt, updatedAt) per ordinare il feed dal più recente al più vecchio. 
 3. Modello Comment (Comment.js)
@@ -24,9 +24,9 @@ Gestisce i commenti scritti dagli utenti sotto ai post.
 	text: String (Obbligatorio, trim: true) — Il testo del commento. 
 	timestamps: Gestito automaticamente (createdAt, updatedAt) per l'ordinamento cronologico dei commenti. 
 4. Modello Chat (Chat.js)
-Rappresenta una conversazione privata tra due o più utenti.
-	participants: Array di ObjectId con riferimento a User (Obbligatorio) — Elenco dei partecipanti ammessi alla chat privata. 
-	timestamps: Gestito automaticamente (createdAt, updatedAt). L'aggiornamento del campo updatedAt viene sfruttato per far risalire in cima alla lista le chat in cui avvengono interazioni recenti. 
+Rappresenta una conversazione privata. Il controller e l'interfaccia gestiscono chat tra due utenti; lo schema può contenere più riferimenti, ma non esistono funzioni applicative per gestire gruppi.
+	participants: Array di ObjectId con riferimento a User — Elenco dei partecipanti. required: true è definito sui singoli elementi; non esiste un validatore che imponga almeno due partecipanti.
+	timestamps: Gestito automaticamente (createdAt, updatedAt). Quando salva un messaggio, il controller aggiorna esplicitamente Chat.updatedAt. L'API ordina le chat per updatedAt decrescente; la pagina non riordina automaticamente la lista a ogni messaggio.
 5. Modello Message (Message.js)
 Rappresenta i singoli messaggi scambiati all'interno di una determinata chat.
 	chatID: ObjectId (Obbligatorio, Riferimento a Chat) — Identificativo della conversazione di appartenenza. 
@@ -34,14 +34,17 @@ Rappresenta i singoli messaggi scambiati all'interno di una determinata chat.
 	content: String (Obbligatorio) — Il testo del messaggio inviato. 
 	timestamps: Gestito automaticamente (createdAt, updatedAt) per ordinare cronologicamente la cronologia della chat. 
 6. Modello RefreshToken (RefreshToken.js)
-Rappresenta le sessioni persistenti di autenticazione per l'implementazione dell'architettura "Dual-Token" (Access Token a breve scadenza e Refresh Token a lunga scadenza). Permette la revoca immediata delle sessioni (in caso di logout o da parte di amministratori) e supporta la Token Rotation.
-	token: String (Obbligatorio, Unico) — Valore univoco del Refresh Token JWT crittografato.
+Rappresenta le sessioni persistenti di autenticazione per l'implementazione dell'architettura "Dual-Token" (Access Token a breve scadenza e Refresh Token a lunga scadenza). Supporta la Token Rotation e la revoca del Refresh Token al logout: il token eliminato non può più rinnovare l'accesso. L'Access Token già emesso rimane valido fino alla sua scadenza; la revoca del Refresh Token non lo invalida immediatamente.
+	token: String (Obbligatorio, Unico) — Valore del Refresh Token JWT firmato, salvato nel database. La firma ne protegge l'integrità; il contenuto non è cifrato.
 	user: ObjectId (Obbligatorio, Riferimento a User) — Riferimento all'utente proprietario della sessione.
-	expiresAt: Date (Obbligatorio) — Data e ora di scadenza del token (default: 7 giorni). È associata a un indice Time-To-Live (TTL) automatico di MongoDB ({ expireAfterSeconds: 0 }) che elimina fisicamente il record dal database non appena il token scade, senza richiedere cron job.
+	expiresAt: Date (Obbligatorio) — Data e ora di scadenza ricavata dal claim exp del JWT e impostata dal controller. La durata predefinita è 7 giorni, configurabile tramite JWT_REFRESH_EXPIRES_IN; non è un default dello schema. È associata a un indice Time-To-Live (TTL) di MongoDB ({ expireAfterSeconds: 0 }) che elimina i record scaduti tramite un processo periodico in background, senza cron job applicativi. La verifica della scadenza del JWT non dipende dai tempi di rimozione del record.
 	createdAt: Date (Default: Date.now) — Data e ora di creazione della sessione nel database.
 Schema delle Relazioni (Riepilogo)
 	User ↔ User (Social Graph): Relazione riflessiva a molti-a-molti tramite gli array followers e following. 
 	User → Post: Relazione uno-a-molti (un utente può creare molteplici post). 
+	User → Comment: Relazione uno-a-molti tramite authorId.
+	User → Message: Relazione uno-a-molti tramite senderID.
+	User ↔ Post (Like): Relazione molti-a-molti tramite l'array likes di Post.
 	Post → Comment: Relazione uno-a-molti (un post può contenere numerosi commenti). 
 	User ↔ Chat: Relazione molti-a-molti tramite l'array di participants. 
 	Chat → Message: Relazione uno-a-molti (una chat contiene una sequenza di messaggi). 

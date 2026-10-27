@@ -52,9 +52,9 @@ Trovare membri per completare una band, avviare collaborazioni per registrare nu
 
 **JamPulse** è un ecosistema full-stack progettato specificamente per le esigenze dei musicisti. Consente a ciascun artista di:
 - **Esibire la propria identità musicale**: profilo arricchito con bio artistica, strumenti suonati e generi di riferimento.
-- **Social Feed & Content Sharing**: pubblicazione di post con testo e link multimediali (immagini, demo, cover) con sistema di like interattivo.
+- **Social Feed & Content Sharing**: pubblicazione di post con testo e URL immagine opzionale, con sistema di like interattivo nel dettaglio del post.
 - **Commenti e Discussioni Sincrone**: thread di discussione sotto i post con aggiornamento istantaneo real-time per chiunque stia visualizzando il medesimo brano/post.
-- **Messaggistica Privata 1-to-1 Real-Time**: sistema di chat diretta istantanea con badge di presenza e notifiche immediate.
+- **Messaggistica Privata 1-to-1 Real-Time**: conversazioni persistenti con aggiornamenti dei nuovi messaggi nella chat aperta.
 - **Ricerca Parametrica per Affinità**: motore di ricerca utenti basato su filtri combinati per strumento (es. Batteria, Basso) e genere (es. Jazz, Rock, Funk).
 - **Ruoli e Moderazione (RBAC)**: distinzione tra normali utenti e amministratori abilitati alla moderazione dei contenuti e alla gestione degli account.
 - **Adattabilità Visiva (Theme System)**: supporto completo per modalità Dark e Light gestito a livello globale tramite ThemeContext di React e Material UI.
@@ -68,12 +68,12 @@ Di seguito una panoramica visiva delle schermate principali dell'applicazione:
 | Feed Principale (Home) | Dettaglio Post & Commenti Live |
 |:---:|:---:|
 | ![Home Feed](UI/Home.png) | ![Post Detail](UI/PostDetail.png) |
-| *Feed cronologico globale, card post multimediali e toggle like* | *Dettaglio del post con sincronizzazione real-time dei commenti* |
+| *Feed cronologico globale, card con immagini e conteggio like; toggle nel dettaglio* | *Dettaglio del post con sincronizzazione real-time dei commenti* |
 
 | Chat Privata Real-Time | Ricerca Musicisti con Filtri |
 |:---:|:---:|
 | ![Chat](UI/Chat.png) | ![Cerca Musicisti](UI/Cerca.png) |
-| *Conversazioni 1-a-1 via WebSocket con storico persistito* | *Filtro multi-tag per strumenti suonati e generi musicali* |
+| *Conversazioni 1-a-1 via WebSocket con storico persistito* | *Selezione multipla di strumenti suonati e generi musicali* |
 
 | Profilo Utente & Competenze | Autenticazione & Registrazione |
 |:---:|:---:|
@@ -86,15 +86,15 @@ Di seguito una panoramica visiva delle schermate principali dell'applicazione:
 
 | Modulo | Descrizione Operativa |
 |---|---|
-| **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token a breve durata (15m) + Refresh Token a lunga durata (7d) persistito su MongoDB con indice TTL per eliminazione automatica. Silent Refresh trasparente gestito dall'interceptor di Axios con coda di richieste (`failedQueue`), rotazione crittografica dei token (Token Rotation con claim `jti`) e revoca su logout: l'utente naviga senza interruzioni e non viene mai disconnesso durante l'uso attivo. |
-| **Controllo Accessi (RBAC)** | Distinzione tra ruolo `user` e `admin`. Gli amministratori possiedono badge visivi dedicati, possono moderare ed eliminare post e commenti altrui, eliminare account e promuovere/declassare ruoli. |
-| **Feed & Gestione Post** | Creazione, modifica ed eliminazione di post con supporto a collegamenti multimediali; visualizzazione feed ordinato per data decrescente; sistema di Like/Unlike con contatore reattivo. |
-| **Commenti Real-Time** | Aggiunta, modifica ed eliminazione commenti. Grazie all'architettura a stanze di Socket.IO, ogni utente con il dettaglio del post aperto visualizza i nuovi commenti all'istante senza ricaricare la pagina. |
-| **Chat Privata Istantanea** | Conversazioni private 1-to-1 con storico messaggi. Ricezione e invio messaggi istantaneo tramite stanze Socket.IO dedicate (`chatId`). |
+| **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token a breve durata (15m) + Refresh Token a lunga durata (7d) persistito su MongoDB con indice TTL per eliminazione automatica. Silent Refresh trasparente gestito dall'interceptor di Axios con coda di richieste (`failedQueue`), rotazione crittografica dei token (Token Rotation con claim `jti`) e revoca del Refresh Token su logout. Se il rinnovo riesce, le richieste proseguono; se fallisce, il client pulisce la sessione e torna al login. |
+| **Controllo Accessi (RBAC)** | Distinzione tra ruolo `user` e `admin`. Gli amministratori possiedono badge visivi dedicati, possono moderare ed eliminare post e commenti altrui, eliminare altri account e promuovere/declassare ruoli tramite API dedicate, senza un pannello amministrativo frontend. |
+| **Feed & Gestione Post** | Creazione ed eliminazione di post con testo e URL immagine, feed ordinato per data decrescente e Like/Unlike nel dettaglio. La modifica del post è disponibile tramite API; le card del feed mostrano il conteggio dei like. |
+| **Commenti Real-Time** | Aggiunta ed eliminazione dei commenti dalla UI; modifica tramite API. I nuovi commenti arrivano via Socket.IO agli utenti iscritti alla room del post. Modifiche e cancellazioni non vengono trasmesse in real-time. |
+| **Chat Privata Istantanea** | Conversazioni private 1-to-1 con storico messaggi. Invio tramite REST autenticata e ricezione real-time nelle room Socket.IO `chat_<chatId>`, accessibili solo ai partecipanti. |
 | **Social Graph (Follow/Unfollow)** | Possibilità di seguire e smettere di seguire altri artisti, aggiornando le metriche social del profilo e la lista degli utenti seguiti. |
-| **Motore di Ricerca Parametrico** | Ricerca testuale per username combinabile con filtri multi-selezione a chip su 9 strumenti e 10 generi musicali. |
-| **Theme Switcher** | Supporto Dark/Light mode globale tramite Material UI, con persistenza della palette visiva. |
-| **OpenAPI / Swagger** | Documentazione interattiva integrata consultabile direttamente su `/api-docs`. |
+| **Motore di Ricerca Parametrico** | Ricerca testuale per username combinabile con filtri a selezione multipla su 9 strumenti e 10 generi musicali, applicati nel frontend dopo il caricamento degli utenti. |
+| **Theme Switcher** | Supporto Dark/Light mode globale tramite Material UI, con tema conservato nello stato React; al reload si riparte dalla modalità chiara. |
+| **OpenAPI / Swagger** | Documentazione interattiva esposta dal backend su `/api-docs`; il gateway Docker attuale non inoltra questo percorso. |
 
 ---
 
@@ -106,55 +106,28 @@ L'applicazione adotta un'architettura **Client-Server a 3 Livelli (3-Tier)** con
 
 ```mermaid
 flowchart TD
-    subgraph Client["💻 Client Browser"]
-        SPA["React SPA (React 19 + MUI)"]
-        AxiosClient["Axios HTTP Client (Bearer JWT)"]
-        SocketClient["Socket.IO Client (WebSockets)"]
-    end
+    Browser["Browser: React SPA, Axios e Socket.IO Client"]
+    Gateway["Gateway Nginx: host porta 80"]
+    Frontend["Container frontend: Nginx porta 80, build React e fallback SPA"]
+    Backend["Container backend: HTTP Express e Socket.IO porta 4000"]
+    Mongo[("MongoDB 7: volume mongo_data")]
+    Direct["useSocket: http://localhost:4000 sul computer del browser"]
 
-    subgraph ReverseProxy["🛡️ Reverse Proxy (Nginx Container :80)"]
-        NginxRoute{"Routing Request"}
-        StaticHost["Servizio File Statici SPA (HTML/JS/CSS)"]
-        APIProxy["Proxy Pass /api/ ➔ backend:4000"]
-        WSProxy["Proxy Pass /socket.io/ (Upgrade: websocket) ➔ backend:4000"]
-    end
-
-    subgraph BackendApp["⚙️ Backend Runtime (Node.js Container :4000)"]
-        HttpServer["Server HTTP Condiviso (http.createServer)"]
-        ExpressApp["Framework Express 5 (REST Router & Controllers)"]
-        SocketServer["Server Gateway Socket.IO (Room Management)"]
-        AuthMW["Auth Middleware (JWT Verify & RBAC Check)"]
-    end
-
-    subgraph DataStorage["🗄️ Persistence Layer (MongoDB 7)"]
-        MongoDb[("MongoDB Database (jampulse)\nVolume: mongo_data")]
-    end
-
-    Client -->|HTTP Port 80| NginxRoute
-    SPA -.-> AxiosClient
-    SPA -.-> SocketClient
-    
-    NginxRoute -->|"GET /"| StaticHost
-    NginxRoute -->|"REST /api/v1/*"| APIProxy
-    NginxRoute -->|"WSS /socket.io/*"| WSProxy
-
-    APIProxy -->|HTTP Forward| HttpServer
-    WSProxy -->|WebSocket Forward| HttpServer
-
-    HttpServer --> ExpressApp
-    HttpServer --> SocketServer
-
-    ExpressApp --> AuthMW
-    AuthMW -->|"ODM Mongoose"| MongoDb
-    SocketServer -.->|"Notifiche Eventi Broadcast"| SocketClient
+    Browser -->|"/ e route SPA"| Gateway
+    Gateway -->|"proxy /"| Frontend
+    Browser -->|"REST /api/v1/*"| Gateway
+    Gateway -->|"proxy /api/"| Backend
+    Gateway -->|"proxy /socket.io/ configurato, non usato dall'hook attuale"| Backend
+    Browser -.->|"connessione Socket.IO diretta"| Direct
+    Direct -.->|"non raggiunge il backend nel solo Compose: porta non pubblicata"| Backend
+    Backend -->|"Mongoose"| Mongo
 ```
 
-### Routing e Configurazione di Rete:
-1. **Ambiente Docker**: L'utente si connette alla porta `80`. Nginx analizza il percorso:
-   - Richieste statiche `/` $\rightarrow$ servite direttamente dalla cartella di build del frontend.
-   - Prefisso `/api/` $\rightarrow$ inoltrate al container `backend:4000`.
-   - Percorso `/socket.io/` $\rightarrow$ inoltrate al backend con upgrade dell'header a WebSocket (`Upgrade: websocket`).
-2. **Ambiente di Sviluppo Locale**: Vite dev-server esegue sulla porta `5173` ed effettua il reverse-proxy automatico di `/api` e `/socket.io` verso `http://localhost:4000` (configurato in `frontend/vite.config.js`).
+### Routing e Configurazione di Rete
+
+1. **Ambiente Docker**: la porta pubblicata è `80`. Il gateway inoltra `/` al container `frontend:80`, che serve i file compilati e applica il fallback SPA; inoltra `/api/` al backend su `4000`. È configurato anche il proxy `/socket.io/`, con upgrade WebSocket. Il deployment fornito usa HTTP, senza terminazione TLS.
+2. **Limiti del Compose attuale**: `useSocket` apre una connessione diretta a `http://localhost:4000`, ma Compose non pubblica la porta del backend sull'host. Di conseguenza, con il solo stack fornito il real-time non raggiunge il backend. Inoltre `/api-docs` non ha una regola di proxy dedicata e viene inoltrato al frontend anziché a Swagger.
+3. **Sviluppo locale**: Vite sulla porta `5173` configura proxy per `/api` e `/socket.io` verso `http://localhost:4000`. Axios usa il proxy API; l'hook Socket.IO usa direttamente il backend, che deve essere raggiungibile dal browser e consentire l'origine frontend tramite CORS.
 
 ---
 
@@ -163,7 +136,7 @@ flowchart TD
 ### Backend
 | Tecnologia | Versione | Motivazione & Ruolo Architetturale |
 |---|---|---|
-| **Node.js** | LTS (v20+) | Ambiente di runtime JavaScript asincrono ed event-driven a elevate prestazioni I/O. |
+| **Node.js** | >=20.19.0 (immagine Docker Node 20) | Ambiente di runtime JavaScript asincrono ed event-driven a elevate prestazioni I/O. |
 | **Express** | 5.2.x | Router HTTP modulare e middleware pipeline per la definizione delle rotte REST. |
 | **MongoDB** | 7.0 | Database NoSQL documentale, ideale per schemi polimorfi e dati musicali annidati. |
 | **Mongoose** | 9.9.x | ODM per la modellazione schemi, validazione dati, pre-save hook di hashing e population dei riferimenti. |
@@ -180,7 +153,7 @@ flowchart TD
 | **Vite** | 8.1.x | Next-generation build tool con Hot Module Replacement (HMR) istantaneo. |
 | **Material UI (MUI)** | 9.2.x | Design system completo con componenti pre-costruiti e supporto a temi dinamici. |
 | **React Router DOM** | 7.18.x | Routing dichiarativo lato client con gestione delle route protette (`ProtectedRoute`). |
-| **Axios** | 1.19.x | Client HTTP con interceptor globali per l'iniezione automatica del token Bearer e auto-logout su HTTP 401. |
+| **Axios** | 1.19.x | Client HTTP con interceptor globali per l'iniezione del token Bearer, rinnovo e retry su HTTP 401, pulizia della sessione se il refresh fallisce. |
 | **Socket.IO Client** | 4.8.x | Client WebSocket con gestione del ciclo di vita della connessione e delle stanze. |
 
 ### Containerizzazione & Infrastruttura
@@ -218,7 +191,7 @@ erDiagram
     USER {
         ObjectId _id PK
         string username "unique, required"
-        string email "unique, required, lowercase"
+        string email "unique, required; lowercase nel controller register"
         string password "hashed bcrypt"
         string role "user | admin (default: user)"
         string bio "optional"
@@ -251,7 +224,7 @@ erDiagram
 
     CHAT {
         ObjectId _id PK
-        array participants "ObjectId ref User (min 2)"
+        array participants "ObjectId ref User; nessun minimo nello schema"
         date createdAt
         date updatedAt
     }
@@ -265,6 +238,8 @@ erDiagram
         date updatedAt
     }
 ```
+
+Il controller crea chat con due partecipanti e la UI gestisce conversazioni 1-a-1. Gli strumenti e i generi sono array di stringhe senza enum lato server; le opzioni del frontend sono suggerimenti di selezione. I riferimenti ObjectId non impongono cancellazioni a cascata: eliminare un post, una chat o un utente non elimina automaticamente i documenti collegati.
 
 ### Logica di Protezione & Metodi Mongoose:
 - **Pre-save Hook User**:
@@ -290,35 +265,34 @@ erDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Utente as Utente / Client
-    participant FE as React SPA (Frontend)
+    actor Utente
+    participant FE as React SPA
     participant BE as Express Backend
     participant DB as MongoDB
 
-    Utente ->> FE: Inserisce username/password e preme Login
-    FE ->> BE: POST /api/v1/auth/login { username, password }
-    activate BE
-    BE ->> DB: User.findOne({ username })
-    activate DB
-    DB -->> BE: Restituisce documento User (con hash password)
-    deactivate DB
-
-    BE ->> BE: user.comparePassword(password) via bcrypt
-    alt Credenziali Valide
-        BE ->> BE: Genera Access Token (15m, HS256)
-        BE ->> BE: Genera Refresh Token (7d, claim univoco jti)
-        BE ->> DB: RefreshToken.create({ token, user, expiresAt })
-        activate DB
-        DB -->> BE: Token di sessione salvato
-        deactivate DB
-        BE -->> FE: 200 OK + { token, accessToken, refreshToken, user }
-        FE ->> FE: Salva accessToken, refreshToken e user in localStorage
-        FE -->> Utente: Reindirizzamento alla Home (Feed)
-    else Credenziali Errate / Inesistenti
-        BE -->> FE: 401 Unauthorized { message: 'Username o password errati' }
-        FE -->> Utente: Notifica visiva di errore
+    Utente ->> FE: Inserisce username e password
+    FE ->> BE: POST /api/v1/auth/login
+    alt Dati mancanti o username vuoto
+        BE -->> FE: 400 Bad Request
+    else Dati presenti
+        BE ->> DB: User.findOne({ username: username.trim() })
+        DB -->> BE: User con hash e ruolo oppure null
+        opt Utente trovato
+            BE ->> BE: user.comparePassword(password)
+        end
+        alt Utente trovato e password corretta
+            BE ->> BE: Genera Access Token HS256 (default 15m)
+            BE ->> BE: Genera Refresh Token HS256 (default 7d, jti casuale)
+            BE ->> DB: new RefreshToken({ token, user, expiresAt }).save()
+            DB -->> BE: Refresh Token salvato, indice TTL su expiresAt
+            BE -->> FE: 200 OK + { token, accessToken, refreshToken, user }
+            FE ->> FE: Salva token, refreshToken e user in localStorage
+            FE ->> FE: Aggiorna AuthContext e naviga alla Home
+        else Utente assente o password errata
+            BE -->> FE: 401, messaggio generico di credenziali errate
+        end
     end
-    deactivate BE
+    Note over FE: Mostra gli errori di login all'utente
 ```
 
 ### 2. Creazione Post, Scadenza Access Token e Silent Refresh Trasparente
@@ -326,54 +300,47 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Utente as Utente Autenticato
-    participant FE as React SPA (Axios Interceptor)
-    participant AuthMW as authMiddleware (verifyToken)
-    participant BE as PostController / AuthController
+    actor Utente
+    participant FE as React SPA e Axios
+    participant Auth as Middleware JWT
+    participant BE as Controller REST
     participant DB as MongoDB
 
-    Utente ->> FE: Compila form e preme "Pubblica"
-    FE ->> AuthMW: POST /api/v1/posts (Header: Bearer <accessToken>)
-    activate AuthMW
-    AuthMW ->> AuthMW: jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
-    alt Token Valido (entro i 15m)
-        AuthMW ->> BE: Inietta req.user = { id, role } e chiama next()
-        deactivate AuthMW
-        activate BE
-        BE ->> DB: Post.create({ userID: req.user.id, content, media })
-        activate DB
-        DB -->> BE: Documento Post salvato
-        deactivate DB
-        BE -->> FE: 201 Created + Post popolato
-        FE -->> Utente: Aggiornamento immediato del feed
-        deactivate BE
-    else Access Token Scaduto (dopo 15m)
-        activate AuthMW
-        AuthMW -->> FE: 401 Unauthorized { code: 'TOKEN_EXPIRED' }
-        deactivate AuthMW
-        Note over FE: L'interceptor di risposta cattura il 401
-        FE ->> BE: POST /api/v1/auth/refresh { refreshToken }
-        activate BE
-        BE ->> DB: RefreshToken.findOne({ token }) & verifica firma
-        BE ->> DB: Token Rotation: elimina vecchio token, salva nuova coppia
-        BE -->> FE: 200 OK + { accessToken, refreshToken }
-        deactivate BE
-        FE ->> FE: Aggiorna i token nel localStorage
-        FE ->> AuthMW: Riprova in automatico POST /api/v1/posts (Header: Bearer <nuovo_token>)
-        activate AuthMW
-        AuthMW ->> BE: Inietta req.user e chiama next()
-        deactivate AuthMW
-        activate BE
-        BE ->> DB: Post.create(...)
-        BE -->> FE: 201 Created + Post popolato
-        deactivate BE
-        FE -->> Utente: Post pubblicato con successo senza alcun redirect o interruzione!
+    Utente ->> FE: Compila il post e preme Pubblica
+    FE ->> Auth: POST /api/v1/posts, Authorization Bearer
+    Auth ->> Auth: Verifica JWT HS256 e scadenza
+    opt Access Token scaduto e richiesta ammessa al retry
+        Auth -->> FE: 401 TOKEN_EXPIRED
+        FE ->> BE: POST /api/v1/auth/refresh con refreshToken
+        BE ->> BE: Verifica firma HS256 e scadenza del Refresh Token
+        BE ->> DB: Cerca il token e l'utente associato
+        DB -->> BE: Record trovati
+        BE ->> DB: Elimina vecchio Refresh Token
+        BE ->> BE: Genera nuovo Access Token stateless
+        BE ->> DB: Salva il nuovo Refresh Token
+        BE -->> FE: 200 OK + token, accessToken, refreshToken
+        FE ->> FE: Aggiorna localStorage e sblocca la coda
+        FE ->> Auth: Ritenta POST /api/v1/posts con nuovo token
     end
+    Note over FE,BE: Il seguito rappresenta il percorso di successo del rinnovo, se necessario
+    Auth ->> BE: Token valido, req.user = id e role
+    BE ->> BE: Valida content e crea new Post con autore da req.user.id
+    BE ->> DB: newPost.save() con content.trim() e media opzionale
+    DB -->> BE: Documento Post salvato
+    BE -->> FE: 201 Created + Post senza populate
+    FE ->> FE: navigate('/') e montaggio di Home
+    FE ->> BE: GET /api/v1/posts autenticata
+    BE ->> DB: Post.find, populate autore e sort createdAt decrescente
+    DB -->> BE: Lista post con autori popolati
+    BE -->> FE: 200 OK + feed
+    FE -->> Utente: Mostra il feed aggiornato
 ```
+
+Il controller restituisce 400 se il testo è vuoto; il middleware restituisce 401 per token assenti, scaduti o non validi. Axios valuta il rinnovo sui 401 delle richieste ammesse al retry, senza richiedere il codice `TOKEN_EXPIRED`. Se il refresh fallisce, anche per problemi di rete o del server, pulisce la sessione e reindirizza a `/login`. La lettura e la cancellazione del Refresh Token sono operazioni separate: la rotazione attuale non garantisce il consumo atomico in presenza di richieste concorrenti.
 
 ### 3. Flusso Real-Time Ibrido (REST Persistence + Socket.IO Broadcast)
 
-Per garantire la massima integrità dei dati e la persistenza anche in caso di disconnessioni di rete, JamPulse adotta il pattern **REST-first**:
+JamPulse adotta il pattern **REST-first**: il client invia messaggi e commenti tramite REST autenticata. Dopo il salvataggio e il popolamento dell'autore, il controller emette il broadcast Socket.IO e restituisce la risposta HTTP. Il client non può trasmettere contenuti direttamente agli altri utenti tramite eventi socket.
 
 ```mermaid
 sequenceDiagram
@@ -385,22 +352,36 @@ sequenceDiagram
     participant SocketGateway as Socket.IO Server
     participant FE2 as React SPA (Client B)
 
-    Mittente ->> FE1: Invia messaggio in chat
-    FE1 ->> BE: POST /api/v1/chats/:id/messages { content }
-    activate BE
-    BE ->> DB: Message.create(...) + Chat.touch(updatedAt)
-    activate DB
-    DB -->> BE: Messaggio salvato e sender popolato
-    deactivate DB
-    BE -->> FE1: 201 Created (messaggio con _id, createdAt, sender)
-    deactivate BE
+    Note over FE1,FE2: Entrambi i client eseguono handshake JWT e join autorizzato
+    FE2 ->> SocketGateway: Handshake con auth.token = accessToken
+    SocketGateway ->> SocketGateway: io.use verifica JWT HS256 e userId
+    SocketGateway -->> FE2: connect oppure connect_error
+    FE2 ->> SocketGateway: join_chat(chatId), dopo connect
+    SocketGateway ->> DB: Chat.exists({ _id: chatId, participants: userId })
+    DB -->> SocketGateway: Chat autorizzata oppure null
+    opt ID valido e utente partecipante
+        SocketGateway ->> SocketGateway: socket.join('chat_' + chatId)
+    end
 
-    FE1 ->> FE1: Aggiorna UI locale immediatamente
-    FE1 ->> SocketGateway: socket.emit('send_message', { chatId, message })
-    activate SocketGateway
-    SocketGateway ->> FE2: socket.to(chatId).emit('receive_message', message)
-    deactivate SocketGateway
-    FE2 ->> FE2: Riceve evento e aggiorna il thread di messaggi in tempo reale
+    Mittente ->> FE1: Invia messaggio in chat
+    FE1 ->> BE: POST /api/v1/chats/:id/messages { content } + Bearer JWT
+    activate BE
+    BE ->> BE: Verifica JWT, contenuto e partecipazione alla chat
+    Note over BE,DB: Flusso seguente eseguito solo se la richiesta è autorizzata
+    BE ->> DB: Message.create({ chatID, senderID: req.user.id, content })
+    activate DB
+    DB -->> BE: Messaggio salvato
+    deactivate DB
+    BE ->> DB: Chat.findByIdAndUpdate(chatId, { updatedAt })
+    BE ->> DB: newMessage.populate('senderID', 'username')
+    DB -->> BE: Messaggio con autore popolato
+    BE ->> SocketGateway: io.to('chat_' + newMessage.chatID).emit('receive_message', newMessage)
+    SocketGateway ->> FE1: receive_message (se iscritto alla room)
+    SocketGateway ->> FE2: receive_message (se iscritto alla room)
+    BE -->> FE1: 201 Created + newMessage
+    deactivate BE
+    FE1 ->> FE1: Aggiorna da REST e socket, deduplicando tramite _id
+    FE2 ->> FE2: Aggiorna il thread, deduplicando tramite _id
 ```
 
 ---
@@ -408,6 +389,8 @@ sequenceDiagram
 ## ⚡ Architettura Real-Time con Socket.IO
 
 Il server unificato HTTP di Node.js (`http.createServer(app)`) condivide le porte sia per le REST API che per il gateway WebSocket di Socket.IO.
+
+`backend/server.js` inizializza Socket.IO, delega la configurazione a `backend/socket.js` e rende l'istanza disponibile ai controller tramite `app.set('io', io)`. Il middleware `io.use` autentica l'handshake usando `socket.handshake.auth.token`: verifica firma, scadenza, algoritmo `HS256` e formato di `userId`, quindi conserva l'identità in `socket.data.userId`.
 
 ### Gestione delle Stanze (Room Topology)
 
@@ -421,7 +404,7 @@ Il server organizza i client connessi in **stanze logiche isolate**:
             ┌──────────────────────────┴──────────────────────────┐
             ▼                                                     ▼
 ┌───────────────────────────────┐             ┌───────────────────────────────┐
-│     Stanza Chat ("chatId")    │             │   Stanza Post ("post_postId") │
+│   Stanza Chat: chat_<chatId>   │             │   Stanza Post: post_<postId>   │
 │  - Client 1 (Partecipante A)  │             │  - Client 1 (Lettore Post)    │
 │  - Client 2 (Partecipante B)  │             │  - Client 3 (Altro Musicista) │
 └───────────────────────────────┘             └───────────────────────────────┘
@@ -431,22 +414,25 @@ Il server organizza i client connessi in **stanze logiche isolate**:
 
 | Nome Evento | Direzione | Payload | Scopo / Comportamento |
 |---|---|---|---|
-| `connection` | Client $\rightarrow$ Server | — | Apertura connessione WebSocket; log del `socket.id`. |
-| `join_chat` | Client $\rightarrow$ Server | `chatId` | Aggiunge il socket alla stanza della chat specifica (`socket.join(chatId)`). |
-| `leave_chat` | Client $\rightarrow$ Server | `chatId` | Rimuove il socket dalla stanza (`socket.leave(chatId)`). |
-| `send_message` | Client $\rightarrow$ Server | `{ chatId, message }` | Inoltra il messaggio a tutti i membri della stanza escluso il mittente. |
-| `receive_message` | Server $\rightarrow$ Client | `message` | Ricezione istantanea del messaggio salvato per aggiornare lo state locale. |
-| `join_post` | Client $\rightarrow$ Server | `postId` | Aggiunge il client alla stanza `post_${postId}` per monitorare i commenti. |
-| `leave_post` | Client $\rightarrow$ Server | `postId` | Rimuove il client dalla stanza `post_${postId}` allo smontaggio del componente. |
-| `send_comment` | Client $\rightarrow$ Server | `{ postId, comment }` | Broadcast del nuovo commento a chiunque abbia il post aperto. |
-| `receive_comment`| Server $\rightarrow$ Client | `comment` | Ricezione istantanea del commento per aggiungerlo alla lista. |
-| `disconnect` | Client $\rightarrow$ Server | — | Pulizia automatica delle stanze e liberazione delle risorse. |
+| `connect` / `connection` | Ciclo di vita Socket.IO | Handshake: `auth: { token }` | Connessione accettata solo dopo la verifica JWT; `connect` è l'evento client, `connection` quello server. |
+| `connect_error` | Server $\rightarrow$ Client | Errore di autenticazione | Handshake rifiutato per token mancante, scaduto, non valido o identità non valida. |
+| `join_chat` | Client $\rightarrow$ Server | `chatId` (stringa ObjectId) | Consulta `Chat.exists({ _id: chatId, participants: socket.data.userId })`; iscrive alla room `chat_<chatId>` solo un partecipante. |
+| `leave_chat` | Client $\rightarrow$ Server | `chatId` (stringa ObjectId) | Rimuove il socket dalla room `chat_<chatId>`. |
+| `receive_message` | Server $\rightarrow$ Client | Messaggio salvato con autore popolato | Emesso dal controller REST alla room della chat, incluso il mittente se iscritto. |
+| `join_post` | Client $\rightarrow$ Server | `postId` (stringa ObjectId) | Verifica l'esistenza del post e iscrive alla room `post_<postId>`; i post sono visibili a tutti gli utenti autenticati. |
+| `leave_post` | Client $\rightarrow$ Server | `postId` (stringa ObjectId) | Rimuove il socket dalla room `post_<postId>`. |
+| `receive_comment` | Server $\rightarrow$ Client | Commento salvato con autore popolato | Emesso dal controller REST alla room del post, incluso l'autore se iscritto. |
+| `disconnect` | Ciclo di vita Socket.IO | Motivo della disconnessione | Rimozione automatica del socket da tutte le room. |
+
+Gli ID delle room vengono normalizzati in minuscolo. I join con ID malformati, chat non autorizzate o post inesistenti vengono ignorati. Gli eventi client `send_message` e `send_comment` non hanno più handler: i broadcast partono esclusivamente dai controller REST dopo la persistenza.
+
+L'hook `useSocket` legge il token aggiornato dal `localStorage` ad ogni connessione e ripete il join ad ogni `connect`, anche dopo una riconnessione automatica. Al cambio di pagina, stanza o sessione chiude il socket precedente. Le pagine Chat e PostDetail deduplicano tramite `_id` gli aggiornamenti REST e socket, che possono arrivare in qualsiasi ordine.
 
 ---
 
 ## 📡 Specifiche Complete API REST
 
-Tutti gli endpoint applicativi (eccetto login, registrazione e health check) richiedono l'autenticazione tramite Header HTTP:
+Tutti gli endpoint applicativi (eccetto le rotte di autenticazione e health check) richiedono l'autenticazione tramite Header HTTP:
 ```http
 Authorization: Bearer <token_jwt>
 ```
@@ -523,17 +509,20 @@ In caso di errore, il backend restituisce un payload JSON standardizzato:
 
 ## 🛡️ Sicurezza e Controllo Accessi (RBAC)
 
+**Real-time autenticato**: `io.use` verifica il JWT all’handshake. I join delle chat richiedono la partecipazione verificata sul database; i join dei post richiedono un post esistente. Il client sceglie le room autorizzate e riceve gli eventi; messaggi e commenti vengono trasmessi solo dai controller REST dopo il salvataggio.
+
 JamPulse integra controlli difensivi a più livelli:
 
 1. **Protezione Crittografica delle Password**:
    - Algoritmo `bcryptjs` con fattore di costo a 10 round.
    - Nessuna password in chiaro viene memorizzata o restituita nelle risposte API (uso metodico di `.select('-password')` nelle query Mongoose).
 2. **Architettura Dual-Token (Access Token + Refresh Token)**:
+   - I JWT sono firmati, non cifrati. Al logout viene revocato il Refresh Token; un Access Token già emesso resta valido fino alla scadenza.
    - **Access Token (15 minuti)**: a vita breve, stateless, inviato nell'header `Authorization: Bearer <token>`. La breve durata minimizza la finestra di vulnerabilità in caso di intercettazione.
    - **Refresh Token (7 giorni)**: a vita più lunga, generato con claim crittografico univoco (`jti: crypto.randomUUID()`) per prevenire collisioni e salvato nel database MongoDB.
    - **Algoritmo Crittografico Forzato**: sia l'Access Token che il Refresh Token forzano esplicitamente l'algoritmo sicuro `{ algorithms: ['HS256'] }`, neutralizzando attacchi di tipo *None-algorithm*.
-   - **Token Rotation (RFC 6749 / OAuth2 Best Practice)**: a ogni operazione di refresh, il vecchio Refresh Token viene immediatamente invalidato e rimpiazzato con uno nuovo. In questo modo ciascun token è rigorosamente monouso, bloccando attacchi di tipo *Replay Attack*.
-   - **Indice TTL di MongoDB**: i token scaduti vengono eliminati fisicamente in automatico dal database grazie all'indice Time-To-Live (`expireAfterSeconds: 0`), senza richiedere cron job esterni.
+   - **Token Rotation**: a ogni refresh riuscito il controller elimina il vecchio Refresh Token e ne salva uno nuovo. I riutilizzi successivi alla cancellazione vengono rifiutati. Poiché lettura e cancellazione sono separate, due richieste concorrenti possono superare il controllo sullo stesso record: il consumo monouso atomico non è garantito. Il claim `jti` distingue i token emessi, senza impedire da solo il riuso.
+   - **Indice TTL di MongoDB**: i record scaduti vengono rimossi periodicamente in background tramite l'indice su `expiresAt` (`expireAfterSeconds: 0`), senza cron job applicativi. La verifica della scadenza JWT è indipendente dalla rimozione fisica del record.
    - **Revoca della Sessione al Logout**: l'endpoint `/api/v1/auth/logout` cancella il token dal DB, disabilitando istantaneamente la possibilità di ottenere nuovi token per quel dispositivo.
 3. **Role-Based Access Control (RBAC)**:
    - Nel payload del JWT viene incluso il ruolo (`'user'` o `'admin'`).
@@ -543,10 +532,10 @@ JamPulse integra controlli difensivi a più livelli:
 4. **Protezione da Auto-Privilege Escalation**:
    - L'endpoint di registrazione (`authController.register`) impone server-side `role: 'user'`, ignorando qualsiasi tentativo malevolo di passare `"role": "admin"` nel body della richiesta.
 5. **Silent Refresh Interceptor Trasparente con Coda Concorrente**:
-   - L'interceptor globale di Axios (`frontend/src/axios.js`) rileva gli errori HTTP 401 (`TOKEN_EXPIRED`).
+   - L'interceptor globale di Axios (`frontend/src/axios.js`) rileva gli errori HTTP 401 delle richieste ammesse al retry, senza filtrare sul codice `TOKEN_EXPIRED`.
    - Gestisce la concorrenza tramite il **Request Queue Pattern**: se più componenti effettuano richieste parallele mentre il token scade, solo la prima effettua la chiamata a `/auth/refresh`, mentre le altre attendono nella `failedQueue`.
-   - Ricevuto il nuovo token, tutte le richieste in sospeso vengono rieseguite in automatico: **l'utente naviga senza interruzioni e non viene mai buttato fuori durante l'uso attivo**.
-   - Solo nel caso in cui anche il Refresh Token risulti scaduto (oltre 7 giorni di totale inattività) o revocato, la sessione viene azzerata con redirect a `/login`.
+   - Ricevuto il nuovo token, le richieste in sospeso vengono rieseguite automaticamente, senza richiedere nuovamente le credenziali se il rinnovo riesce.
+   - Se manca il Refresh Token o il suo rinnovo fallisce, anche per errori di rete o del server, la sessione locale viene azzerata con redirect a `/login`. Una richiesta già contrassegnata come ritentata non avvia un ulteriore refresh.
 
 ---
 
@@ -581,7 +570,8 @@ JamPulse/
 │   │   ├── postRoute.js
 │   │   └── userRoute.js
 │   ├── server.js                          # Bootstrap unificato: Express + Socket.IO + Mongoose
-│   ├── swagger.js                         # Specifiche OpenAPI 3.0 JSDoc
+│   ├── socket.js                          # Handshake JWT e autorizzazione delle room
+│   ├── swagger.js                         # Specifiche OpenAPI 3.0 definite in JavaScript
 │   ├── seed.js                            # Script di popolamento database con musicisti demo
 │   ├── Dockerfile                         # Configurazione container backend
 │   ├── package.json
@@ -591,19 +581,19 @@ JamPulse/
 │   ├── public/Logo/                       # Varianti logo responsive (Dark/Light)
 │   ├── src/
 │   │   ├── components/                    # Componenti UI riutilizzabili
-│   │   │   ├── MessageBubble.jsx          # Bolla messaggio in chat con avatar e orario
-│   │   │   ├── MultiSelectFilter.jsx      # Selettore a chip per strumenti e generi
+│   │   │   ├── MessageBubble.jsx          # Bolla con testo, allineamento e colori per mittente/destinatario
+│   │   │   ├── MultiSelectFilter.jsx      # Selettore multiplo per strumenti e generi
 │   │   │   ├── PageLayout.jsx             # Shell applicativa con Sidebar e Outlet
 │   │   │   ├── PostCard.jsx               # Card post con gestione media, like e delete
-│   │   │   ├── SearchBar.jsx              # Input con debounce per ricerca musicisti
+│   │   │   ├── SearchBar.jsx              # Input controllato per ricerca immediata, senza debounce
 │   │   │   ├── Sidebar.jsx                # Navigazione laterale e theme toggle
 │   │   │   ├── UserBadge.jsx              # Badge identificativo utente con ruolo
-│   │   │   └── UserCard.jsx               # Scheda musicista con pulsante follow/unfollow
+│   │   │   └── UserCard.jsx               # Scheda musicista con pulsanti Profilo e Scrivi
 │   │   ├── context/
 │   │   │   ├── AuthContext.jsx            # Stato globale sessione, token e ruolo
 │   │   │   └── ThemeContext.jsx           # Gestione tema Dark/Light via MUI
 │   │   ├── hooks/
-│   │   │   └── useSocket.js               # Custom hook per gestione eventi e stanze Socket.IO
+│   │   │   └── useSocket.js               # Connessione autenticata, riconnessione e ricezione eventi
 │   │   ├── pages/                         # Viste applicative (React Router)
 │   │   │   ├── Chat.jsx                   # Vista chat privata real-time
 │   │   │   ├── CreatePost.jsx             # Form creazione nuovo post
@@ -614,7 +604,7 @@ JamPulse/
 │   │   │   └── Search.jsx                 # Motore di ricerca con filtri avanzati
 │   │   ├── services/                      # Client API Axios disaccoppiati per entità
 │   │   ├── utils/
-│   │   │   ├── musicOptions.js            # Costanti per strumenti e generi ammessi
+│   │   │   ├── musicOptions.js            # Opzioni UI per strumenti e generi musicali
 │   │   │   └── timeUtils.js               # Formattazione timestamp date e orari
 │   │   ├── App.jsx                        # Definizione albero rotte e ProtectedRoute
 │   │   ├── axios.js                       # Configurazione globale Axios con Interceptors
@@ -627,7 +617,7 @@ JamPulse/
 ├── nginx/
 │   └── nginx.conf                         # Reverse proxy principale gateway di routing
 ├── UI/                                    # Screenshot dimostrativi dell'interfaccia
-├── Documentazione - Esame/                # Diagrammi di sequenza e use-case originali
+├── Documentazione - Esame/                # Modelli, componenti React e sorgenti dei diagrammi UML
 ├── docker-compose.yml                     # Orchestrazione dei 4 container (mongo, backend, frontend, nginx)
 └── README.md
 ```
@@ -636,7 +626,7 @@ JamPulse/
 
 ## 🐳 Guida all'Avvio Rapido con Docker
 
-L'approccio raccomandato per avviare l'intero stack in un ambiente identico alla produzione è l'uso di **Docker Compose**.
+**Docker Compose** avvia i quattro servizi definiti nel repository. La configurazione attuale permette di usare frontend e API tramite il gateway, ma presenta i limiti di accesso a Socket.IO e Swagger descritti sotto.
 
 ### Prerequisiti
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installato e attivo sulla macchina.
@@ -645,7 +635,7 @@ L'approccio raccomandato per avviare l'intero stack in un ambiente identico alla
 
 1. **Clona il repository**:
    ```bash
-   git clone https://github.com/tuo-username/JamPulse.git
+   git clone https://github.com/LucaValenz/JamPulse.git
    cd JamPulse
    ```
 
@@ -667,8 +657,9 @@ L'approccio raccomandato per avviare l'intero stack in un ambiente identico alla
 
 4. **Accedi ai servizi**:
    - 🌐 **Frontend Web App**: [http://localhost](http://localhost)
-   - 📖 **Swagger API Docs**: [http://localhost/api-docs](http://localhost/api-docs)
    - 🩺 **Health Check**: [http://localhost/api/v1/health](http://localhost/api/v1/health)
+
+**Limiti della configurazione fornita**: il gateway non inoltra `/api-docs` al backend e la porta `4000` non è pubblicata sull’host. Swagger non è quindi disponibile tramite `http://localhost/api-docs`; inoltre la connessione Socket.IO diretta dell’hook a `http://localhost:4000` non raggiunge questo backend. Per provare Swagger e gli aggiornamenti real-time con il codice attuale, usare l’avvio locale descritto nella sezione seguente. I messaggi e i commenti restano inviabili via API REST nello stack Docker.
 
 5. **Arresto dei container**:
    ```bash
@@ -683,7 +674,7 @@ L'approccio raccomandato per avviare l'intero stack in un ambiente identico alla
 Se desideri eseguire il progetto in locale senza Docker per usufruire del reload a caldo sia su Express (`nodemon`) che su React (`Vite HMR`):
 
 ### Prerequisiti
-- **Node.js** v18+ (consigliato v20 LTS o superiore)
+- **Node.js** compatibile con tutti i lockfile: `^20.19.0`, `^22.13.0` oppure `>=24` (per esempio Node 22 da 22.13.0).
 - **MongoDB** in esecuzione in locale (porta standard `27017`)
 
 ---
@@ -706,7 +697,7 @@ npm run seed
 npm run dev
 ```
 
-Il server Express e il gateway Socket.IO si avvieranno sulla porta specificata in `.env` (default: **4000**):
+Il server Express e il gateway Socket.IO si avvieranno sulla porta specificata in `.env` (**4000** nel file `.env.example`, da impostare: il server non definisce un fallback per `PORT`):
 - API REST: `http://localhost:4000/api/v1`
 - Swagger UI: `http://localhost:4000/api-docs`
 
@@ -729,7 +720,7 @@ npm run dev
 L'applicazione sarà accessibile all'indirizzo:
 - 🌐 **App Frontend**: [http://localhost:5173](http://localhost:5173)
 
-> ℹ️ **Nota sul Proxy di Sviluppo**: Durante l'esecuzione con Vite, le chiamate a `/api` e le connessioni WebSocket su `/socket.io` vengono automaticamente inoltrate a `http://localhost:4000` grazie alla configurazione proxy presente in `vite.config.js`.
+> ℹ️ **Nota sul Proxy di Sviluppo**: Vite configura il proxy di `/api` e `/socket.io` verso `http://localhost:4000`. Le chiamate API usano il proxy; l’hook `useSocket` attuale utilizza direttamente `http://localhost:4000`, quindi il backend deve essere raggiungibile dal browser a questo indirizzo e consentire l’origine del frontend tramite CORS.
 
 ---
 
@@ -739,20 +730,20 @@ Il file di configurazione `backend/.env` controlla i parametri operativi del ser
 
 | Variabile | Obbligatoria | Valore Predefinito / Esempio | Descrizione |
 |---|:---:|---|---|
-| `PORT` | Sì | `4000` | Porta TCP su cui resta in ascolto il server Node.js HTTP/WebSocket. |
+| `PORT` | Sì | Esempio: `4000` (nessun fallback nel server) | Porta TCP su cui resta in ascolto il server Node.js HTTP/WebSocket. |
 | `MONGO_URI` | Sì | `mongodb://localhost:27017/jampulse` | Stringa di connessione a MongoDB (locale o cluster remoto come MongoDB Atlas). In Docker usare `mongodb://mongo:27017/jampulse`. |
-| `JWT_SECRET` | Sì | *stringa casuale complessa* | Chiave crittografica segreta per generare e verificare la firma dei token JWT (HS256). |
-| `JWT_ACCESS_EXPIRES_IN` | No | `15m` | Tempo di validità dell'Access Token a breve durata (es. `15m`, `30m`, `1h`). |
+| `JWT_SECRET` | Raccomandata; fallback di sviluppo se omessa | *stringa casuale complessa* | Chiave crittografica segreta per generare e verificare la firma dei token JWT (HS256). |
+| `JWT_ACCESS_EXPIRES_IN` | No | Fallback su `JWT_EXPIRES_IN`, poi `15m` | Tempo di validità dell'Access Token a breve durata (es. `15m`, `30m`, `1h`). |
 | `REFRESH_TOKEN_SECRET` | No | *fallback su JWT_SECRET + _refresh* | Chiave crittografica dedicata alla firma dei Refresh Token. |
 | `JWT_REFRESH_EXPIRES_IN` | No | `7d` | Tempo di validità del Refresh Token a lunga durata (es. `7d`, `30d`). |
-| `CORS_ORIGIN` | No | `http://localhost:5173` | Origine HTTP autorizzata a effettuare chiamate cross-origin (`*` o indirizzo specifico). |
-| `JWT_EXPIRES_IN` | No | `2h` | Parametro legacy di fallback per la scadenza dell'Access Token. |
+| `CORS_ORIGIN` | No | Default `*`; esempio locale `http://localhost:5173` | Origine HTTP autorizzata a effettuare chiamate cross-origin (`*` o indirizzo specifico). |
+| `JWT_EXPIRES_IN` | No | Nessun valore autonomo predefinito | Fallback legacy usato se manca `JWT_ACCESS_EXPIRES_IN`; se mancano entrambe, la durata è `15m`. |
 
 ---
 
 ## 🎸 Database Seeding & Account Demo di Prova
 
-Il progetto include uno script di seeding (`backend/seed.js`) che pulisce il database e genera una rete musicale completa con artisti celebri, post con immagini multimediali, commenti incrociati e chat pre-avviate.
+Il progetto include uno script di seeding (`backend/seed.js`) che svuota le collezioni User, Post, Comment, Chat e Message (lasciando invariata RefreshToken) e genera una rete musicale con artisti celebri, post con immagini multimediali, commenti incrociati e chat pre-avviate.
 
 Per eseguire il popolamento:
 ```bash
@@ -780,13 +771,13 @@ npm run seed
 
 JamPulse include una suite Swagger/OpenAPI 3.0 completamente navigabile che permette di esplorare gli schemi dati e testare ciascun endpoint direttamente dal browser:
 
-- **Con Docker**: [http://localhost/api-docs](http://localhost/api-docs)
+- **Con il Compose attuale**: Swagger non è esposto dal gateway. `/api-docs` viene inoltrato alla SPA; anche il server di prova configurato da Swagger (`http://localhost:4000`) richiede un backend raggiungibile dal browser su quella porta.
 - **In Locale**: [http://localhost:4000/api-docs](http://localhost:4000/api-docs)
 
 Per autorizzare le richieste da Swagger:
 1. Effettua una chiamata a `POST /api/v1/auth/login`.
 2. Copia la stringa `token` restituita.
-3. Clicca sul pulsante verde **Authorize** in alto a destra su Swagger UI e incolla il token nel formato `Bearer <tuo_token>`.
+3. Clicca sul pulsante verde **Authorize** in alto a destra su Swagger UI e incolla soltanto il JWT. Lo schema HTTP Bearer fa aggiungere alla UI il prefisso `Bearer` nell’header `Authorization`.
 
 ### Endpoint di Health Check
 Per sistemi di monitoraggio o container probe:
@@ -804,7 +795,7 @@ Risposta:
 
 ## 🎷 Tassonomia Musicale Supportata
 
-Il frontend integra opzioni normalizzate in `src/utils/musicOptions.js` utilizzate sia in fase di registrazione sia nei filtri avanzati di ricerca:
+Il frontend integra opzioni in `src/utils/musicOptions.js` utilizzate in registrazione, modifica profilo e ricerca. Sono liste di selezione della UI, non vincoli enum del backend: il seed include anche `Tromba`, `Regia` e `All`, assenti da queste opzioni.
 
 ### Strumenti Musicali:
 `Arpa`, `Basso`, `Batteria`, `Chitarra`, `Pianoforte`, `Sassofono`, `Sintetizzatore`, `Tastiera`, `Voce`.
@@ -826,4 +817,4 @@ Il frontend integra opzioni normalizzate in `src/utils/musicOptions.js` utilizza
 
 ## 📄 Licenza
 
-Questo progetto è rilasciato sotto licenza [ISC](https://opensource.org/licenses/ISC).
+Il file [LICENSE](LICENSE) contiene la licenza MIT. Il manifest `backend/package.json` riporta ancora `ISC`: questa dichiarazione del pacchetto è discordante con il file di licenza del repository.

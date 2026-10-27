@@ -1,7 +1,11 @@
 @startuml Sequence_CreatePost
 autonumber
 skinparam BoxPadding 10
-skinparam ParticipantPadding 10
+<style>
+participant {
+    Padding 10
+}
+</style>
 
 actor "Utente" as User
 participant "Frontend (React)" as FE
@@ -10,28 +14,42 @@ participant "Backend (Express)" as BE
 database "MongoDB" as DB
 
 User -> FE: Compila il post e pubblica
-FE -> BE: POST /api/v1/posts + Header: Bearer <accessToken>
+FE -> BE: POST /api/v1/posts { content, media }\nAuthorization: Bearer <accessToken>
 activate BE
 
 BE -> Auth: verifyToken(req, res, next)
 activate Auth
-Auth -> Auth: Verifica validità token JWT (HS256) e ricava req.user (id, role)
-Auth --> BE: Token valido (prosegue)
+Auth -> Auth: Verifica firma, scadenza e algoritmo JWT (HS256)
+Auth --> BE: Esito della verifica
 deactivate Auth
 
-BE -> BE: Validazione input (controllo testo obbligatorio)
-
-alt Dati validi
-    BE -> DB: Post.create({ userID: req.user.id, content, media })
-    activate DB
-    DB --> BE: Conferma salvataggio del post
-    deactivate DB
-    BE --> FE: Restituisce 201 Created + dati del post
-    FE --> User: Aggiorna il Feed mostrando il nuovo post
-else Dati non validi
-    BE --> FE: Restituisce 400 Bad Request
-    FE --> User: Mostra messaggio di errore
+alt Token mancante, scaduto o non valido
+    BE --> FE: 401 Unauthorized (risposta del middleware)
+else Token valido
+    Auth -> Auth: req.user = { id, role }
+    Auth -> BE: next(): prosegue nel controller
+    BE -> BE: Validazione del contenuto non vuoto
+    alt Dati validi
+        BE -> BE: new Post({ userID: req.user.id,\ncontent: content.trim(), media: media || '' })
+        BE -> DB: newPost.save()
+        DB --> BE: Post salvato (autore come ObjectId)
+        BE --> FE: 201 Created + newPost (senza populate)
+        FE -> FE: navigate('/') e montaggio di Home
+        FE -> BE: GET /api/v1/posts\nAuthorization: Bearer <accessToken>
+        BE -> DB: Post.find({}).populate('userID', 'username')\n.sort({ createdAt: -1 })
+        DB --> BE: Feed con autori popolati
+        BE --> FE: 200 OK + lista post
+        FE --> User: Mostra il feed aggiornato
+    else Dati non validi
+        BE --> FE: 400 Bad Request
+        FE --> User: Mostra messaggio di errore
+    end
 end
 
 deactivate BE
+note over FE, Auth
+Il diagramma mostra le richieste HTTP.
+Su 401 Axios può rinnovare i token e ritentare la richiesta.
+Se il refresh fallisce, pulisce la sessione e torna al login.
+end note
 @enduml
