@@ -19,23 +19,37 @@ note over FE1, FE2
 Entrambi i client eseguono handshake e join.
 Di seguito è mostrato il flusso del destinatario.
 end note
-FE2 -> IO: Connessione Socket.IO con auth: { token: accessToken }
-IO -> IO: io.use: verifica firma, scadenza e algoritmo HS256
-alt Token mancante, scaduto, non valido o userId non valido
+FE2 -> IO: Connessione /socket.io/ tramite proxy Vite/Nginx\nauth: { token: accessToken }
+IO -> IO: io.use: verifica firma, scadenza, HS256, userId ed exp numerico
+alt Token mancante, scaduto, non valido, userId o exp non valido
     IO --> FE2: connect_error (connessione rifiutata)
 else Token valido
-    IO -> IO: socket.data.userId = decoded.userId
+    IO -> IO: Conserva userId ed expiresAt\nProgramma la chiusura alla scadenza del JWT
     IO --> FE2: connect
-    FE2 -> IO: socket.emit('join_chat', chatId)
+    FE2 -> IO: socket.timeout(10000).emit('join_chat', chatId, ack)
     IO -> IO: Valida chatId (stringa ObjectId)
     opt ID valido
         IO -> DB: Chat.exists({ _id: chatId, participants: socket.data.userId })
         DB --> IO: Chat autorizzata oppure null
-        opt Utente partecipante della chat
+        alt Utente partecipante e sessione ancora valida
             IO -> IO: socket.join('chat_' + chatId.toLowerCase())
+            IO --> FE2: Ack { ok: true }
+            FE2 -> BE: GET /api/v1/chats/:id/messages autenticata
+            BE -> DB: Verifica partecipazione e carica cronologia
+            DB --> BE: Messaggi salvati
+            BE --> FE2: 200 OK + cronologia
+            FE2 -> FE2: Unisce snapshot ed eventi arrivati durante la richiesta\nDeduplica per _id, ordina per data e scarta risposte superate
+        else Chat assente, accesso negato o sessione non valida
+            IO --> FE2: Ack { ok: false }, se ancora connesso
         end
     end
 end
+note over FE2, IO
+ID malformati: ack { ok: false }.
+Errori delle query: ack { ok: false, code: 'TEMPORARY_ERROR' }.
+Timeout del join o errore temporaneo: nuovo tentativo dopo 2 secondi.
+Errore di sincronizzazione REST: nuovo tentativo dopo 5 secondi.
+end note
 
 == Invio e persistenza REST ==
 Sender -> FE1: Scrive e invia un messaggio nella chat
@@ -69,12 +83,37 @@ else Token valido
 end
 deactivate BE
 
+== Scadenza e rinnovo della sessione ==
+IO -> FE2: session_expired alla scadenza del JWT
+IO -> IO: socket.disconnect(true) e uscita dalle room
+FE2 -> FE2: Chiude il socket e chiama refreshSession()
+note over FE2, BE
+Anche connect_error con data.code TOKEN_EXPIRED avvia il rinnovo.
+REST e Socket.IO attendono la stessa refreshPromise nella scheda.
+end note
+opt Refresh Token presente
+    FE2 -> BE: POST /api/v1/auth/refresh { refreshToken }
+end
+alt Rinnovo riuscito e sessione ancora corrente
+    BE --> FE2: 200 OK + nuovi token
+    FE2 -> FE2: Aggiorna localStorage e notifica session-changed\nAuthContext sincronizza la sessione
+    FE2 -> IO: Nuova connessione con token aggiornato
+    IO --> FE2: connect
+    FE2 -> IO: Ripete join_chat e attende l'ack
+    FE2 -> BE: Dopo ack positivo, ricarica cronologia REST
+else Refresh Token assente o rinnovo rifiutato con 401/403
+    FE2 -> FE2: Pulisce la sessione e aggiorna AuthContext\nLe route protette riportano al login
+else Errore temporaneo di rete o del server
+    BE --> FE2: Errore, oppure nessuna risposta di rete
+    FE2 -> FE2: Mantiene la sessione e riprova dopo 5 secondi\nSolo se il componente e la sessione sono ancora attivi
+end
+
 note over FE1, IO
 Nessun evento client send_message o send_comment.
 Il server trasmette solo i documenti persistiti dai controller REST.
-Ad ogni riconnessione useSocket rilegge il token e ripete il join.
-Il diagramma mostra il singolo scambio HTTP: su 401 Axios può
-rinnovare i token e ritentare. Il socket non avvia il refresh
-su connect_error; legge il token disponibile alla connessione.
+Ad ogni riconnessione useSocket rilegge il token e ripete il join;
+la cronologia REST recupera i messaggi persi durante la disconnessione.
+Su 401 Axios valuta un solo retry e riusa un token gia rinnovato.
+Il cambio di chat o pagina invalida la sincronizzazione precedente.
 end note
 @enduml

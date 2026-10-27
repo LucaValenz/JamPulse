@@ -86,7 +86,7 @@ Di seguito una panoramica visiva delle schermate principali dell'applicazione:
 
 | Modulo | Descrizione Operativa |
 |---|---|
-| **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token a breve durata (15m) + Refresh Token a lunga durata (7d) persistito su MongoDB con indice TTL per eliminazione automatica. Silent Refresh trasparente gestito dall'interceptor di Axios con coda di richieste (`failedQueue`), rotazione crittografica dei token (Token Rotation con claim `jti`) e revoca del Refresh Token su logout. Se il rinnovo riesce, le richieste proseguono; se fallisce, il client pulisce la sessione e torna al login. |
+| **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token (default 15m) + Refresh Token (default 7d) persistito su MongoDB con indice TTL. REST e Socket.IO condividono `refreshSession()` e una Promise di rinnovo nella scheda corrente; i token ruotano con claim `jti` e il Refresh Token viene revocato al logout. AuthContext viene sincronizzato tramite `session-changed`. Refresh Token assente o rinnovo rifiutato con 401/403 causano la pulizia della sessione; gli errori temporanei mantengono i dati locali. |
 | **Controllo Accessi (RBAC)** | Distinzione tra ruolo `user` e `admin`. Gli amministratori possiedono badge visivi dedicati, possono moderare ed eliminare post e commenti altrui, eliminare altri account e promuovere/declassare ruoli tramite API dedicate, senza un pannello amministrativo frontend. |
 | **Feed & Gestione Post** | Creazione ed eliminazione di post con testo e URL immagine, feed ordinato per data decrescente e Like/Unlike nel dettaglio. La modifica del post è disponibile tramite API; le card del feed mostrano il conteggio dei like. |
 | **Commenti Real-Time** | Aggiunta ed eliminazione dei commenti dalla UI; modifica tramite API. I nuovi commenti arrivano via Socket.IO agli utenti iscritti alla room del post. Modifiche e cancellazioni non vengono trasmesse in real-time. |
@@ -111,23 +111,21 @@ flowchart TD
     Frontend["Container frontend: Nginx porta 80, build React e fallback SPA"]
     Backend["Container backend: HTTP Express e Socket.IO porta 4000"]
     Mongo[("MongoDB 7: volume mongo_data")]
-    Direct["useSocket: http://localhost:4000 sul computer del browser"]
 
     Browser -->|"/ e route SPA"| Gateway
     Gateway -->|"proxy /"| Frontend
     Browser -->|"REST /api/v1/*"| Gateway
     Gateway -->|"proxy /api/"| Backend
-    Gateway -->|"proxy /socket.io/ configurato, non usato dall'hook attuale"| Backend
-    Browser -.->|"connessione Socket.IO diretta"| Direct
-    Direct -.->|"non raggiunge il backend nel solo Compose: porta non pubblicata"| Backend
+    Browser -->|"Socket.IO /socket.io/ sullo stesso dominio"| Gateway
+    Gateway -->|"proxy /socket.io/ e upgrade WebSocket"| Backend
     Backend -->|"Mongoose"| Mongo
 ```
 
 ### Routing e Configurazione di Rete
 
 1. **Ambiente Docker**: la porta pubblicata è `80`. Il gateway inoltra `/` al container `frontend:80`, che serve i file compilati e applica il fallback SPA; inoltra `/api/` al backend su `4000`. È configurato anche il proxy `/socket.io/`, con upgrade WebSocket. Il deployment fornito usa HTTP, senza terminazione TLS.
-2. **Limiti del Compose attuale**: `useSocket` apre una connessione diretta a `http://localhost:4000`, ma Compose non pubblica la porta del backend sull'host. Di conseguenza, con il solo stack fornito il real-time non raggiunge il backend. Inoltre `/api-docs` non ha una regola di proxy dedicata e viene inoltrato al frontend anziché a Swagger.
-3. **Sviluppo locale**: Vite sulla porta `5173` configura proxy per `/api` e `/socket.io` verso `http://localhost:4000`. Axios usa il proxy API; l'hook Socket.IO usa direttamente il backend, che deve essere raggiungibile dal browser e consentire l'origine frontend tramite CORS.
+2. **Accesso al backend e limiti del Compose**: REST e Socket.IO passano dal gateway; non è necessario pubblicare la porta `4000` sull'host. Rimane il limite di `/api-docs`: manca una regola di proxy dedicata e il percorso viene inoltrato al frontend anziché a Swagger.
+3. **Sviluppo locale**: Vite sulla porta `5173` inoltra `/api` e `/socket.io` verso `http://localhost:4000`, con supporto all'upgrade WebSocket. Axios e Socket.IO usano entrambi questi proxy. Per un backend Socket.IO su un'origine separata si può impostare `VITE_SOCKET_URL` durante l'avvio o la build del frontend, configurando il CORS del backend per l'origine del browser.
 
 ---
 
@@ -153,7 +151,7 @@ flowchart TD
 | **Vite** | 8.1.x | Next-generation build tool con Hot Module Replacement (HMR) istantaneo. |
 | **Material UI (MUI)** | 9.2.x | Design system completo con componenti pre-costruiti e supporto a temi dinamici. |
 | **React Router DOM** | 7.18.x | Routing dichiarativo lato client con gestione delle route protette (`ProtectedRoute`). |
-| **Axios** | 1.19.x | Client HTTP con interceptor globali per l'iniezione del token Bearer, rinnovo e retry su HTTP 401, pulizia della sessione se il refresh fallisce. |
+| **Axios** | 1.19.x | Client HTTP con interceptor per il token Bearer, rinnovo condiviso con Socket.IO e un retry su HTTP 401; distingue il rinnovo rifiutato dagli errori temporanei. |
 | **Socket.IO Client** | 4.8.x | Client WebSocket con gestione del ciclo di vita della connessione e delle stanze. |
 
 ### Containerizzazione & Infrastruttura
@@ -319,7 +317,7 @@ sequenceDiagram
         BE ->> BE: Genera nuovo Access Token stateless
         BE ->> DB: Salva il nuovo Refresh Token
         BE -->> FE: 200 OK + token, accessToken, refreshToken
-        FE ->> FE: Aggiorna localStorage e sblocca la coda
+        FE ->> FE: Aggiorna localStorage, notifica AuthContext e risolve refreshPromise
         FE ->> Auth: Ritenta POST /api/v1/posts con nuovo token
     end
     Note over FE,BE: Il seguito rappresenta il percorso di successo del rinnovo, se necessario
@@ -336,7 +334,7 @@ sequenceDiagram
     FE -->> Utente: Mostra il feed aggiornato
 ```
 
-Il controller restituisce 400 se il testo è vuoto; il middleware restituisce 401 per token assenti, scaduti o non validi. Axios valuta il rinnovo sui 401 delle richieste ammesse al retry, senza richiedere il codice `TOKEN_EXPIRED`. Se il refresh fallisce, anche per problemi di rete o del server, pulisce la sessione e reindirizza a `/login`. La lettura e la cancellazione del Refresh Token sono operazioni separate: la rotazione attuale non garantisce il consumo atomico in presenza di richieste concorrenti.
+Il controller restituisce 400 se il testo è vuoto; il middleware restituisce 401 per token assenti, scaduti o non validi. Axios valuta il rinnovo sui 401 delle richieste ammesse al retry, senza richiedere il codice `TOKEN_EXPIRED`. `refreshSession()` condivide una sola Promise tra REST e Socket.IO nella stessa scheda. Se una risposta 401 si riferisce a un token già sostituito, Axios ritenta con quello corrente senza un altro refresh. Se manca il Refresh Token o il rinnovo restituisce 401/403 per la sessione corrente, il client pulisce la sessione, aggiorna AuthContext e le route protette riportano al login. Gli errori di rete o del server mantengono i dati della sessione e vengono propagati al chiamante. La lettura e la cancellazione del Refresh Token sono operazioni separate: la rotazione attuale non garantisce il consumo atomico tra schede o client diversi.
 
 ### 3. Flusso Real-Time Ibrido (REST Persistence + Socket.IO Broadcast)
 
@@ -361,6 +359,12 @@ sequenceDiagram
     DB -->> SocketGateway: Chat autorizzata oppure null
     opt ID valido e utente partecipante
         SocketGateway ->> SocketGateway: socket.join('chat_' + chatId)
+        SocketGateway -->> FE2: Ack { ok: true }
+        FE2 ->> BE: GET /api/v1/chats/:id/messages autenticata
+        BE ->> DB: Verifica partecipazione e carica cronologia
+        DB -->> BE: Messaggi salvati
+        BE -->> FE2: 200 OK + cronologia
+        FE2 ->> FE2: Unisce cronologia ed eventi arrivati durante il caricamento
     end
 
     Mittente ->> FE1: Invia messaggio in chat
@@ -390,7 +394,7 @@ sequenceDiagram
 
 Il server unificato HTTP di Node.js (`http.createServer(app)`) condivide le porte sia per le REST API che per il gateway WebSocket di Socket.IO.
 
-`backend/server.js` inizializza Socket.IO, delega la configurazione a `backend/socket.js` e rende l'istanza disponibile ai controller tramite `app.set('io', io)`. Il middleware `io.use` autentica l'handshake usando `socket.handshake.auth.token`: verifica firma, scadenza, algoritmo `HS256` e formato di `userId`, quindi conserva l'identità in `socket.data.userId`.
+`backend/server.js` inizializza Socket.IO, delega la configurazione a `backend/socket.js` e rende l'istanza disponibile ai controller tramite `app.set('io', io)`. Il middleware `io.use` autentica l'handshake usando `socket.handshake.auth.token`: verifica firma, scadenza, algoritmo `HS256`, formato di `userId` e presenza di un claim `exp` numerico. Conserva identità e scadenza in `socket.data.userId` e `socket.data.expiresAt`. Alla scadenza invia `session_expired` e disconnette il socket. Prima di completare un join, anche dopo una query asincrona, ricontrolla che la connessione e la sessione siano ancora valide.
 
 ### Gestione delle Stanze (Room Topology)
 
@@ -422,11 +426,14 @@ Il server organizza i client connessi in **stanze logiche isolate**:
 | `join_post` | Client $\rightarrow$ Server | `postId` (stringa ObjectId) | Verifica l'esistenza del post e iscrive alla room `post_<postId>`; i post sono visibili a tutti gli utenti autenticati. |
 | `leave_post` | Client $\rightarrow$ Server | `postId` (stringa ObjectId) | Rimuove il socket dalla room `post_<postId>`. |
 | `receive_comment` | Server $\rightarrow$ Client | Commento salvato con autore popolato | Emesso dal controller REST alla room del post, incluso l'autore se iscritto. |
+| `session_expired` | Server $\rightarrow$ Client | Nessuno | Segnala la scadenza del JWT prima della disconnessione; il client richiede il rinnovo condiviso e si riconnette. |
 | `disconnect` | Ciclo di vita Socket.IO | Motivo della disconnessione | Rimozione automatica del socket da tutte le room. |
 
-Gli ID delle room vengono normalizzati in minuscolo. I join con ID malformati, chat non autorizzate o post inesistenti vengono ignorati. Gli eventi client `send_message` e `send_comment` non hanno più handler: i broadcast partono esclusivamente dai controller REST dopo la persistenza.
+Gli ID delle room vengono normalizzati in minuscolo. `join_chat` e `join_post` rispondono alla callback di conferma con `{ ok: true }` dopo l'iscrizione, oppure `{ ok: false }` per ID malformati, accessi negati o risorse assenti. Gli errori delle query restituiscono `{ ok: false, code: 'TEMPORARY_ERROR' }`. Gli eventi client `send_message` e `send_comment` non hanno più handler: i broadcast partono esclusivamente dai controller REST dopo la persistenza.
 
-L'hook `useSocket` legge il token aggiornato dal `localStorage` ad ogni connessione e ripete il join ad ogni `connect`, anche dopo una riconnessione automatica. Al cambio di pagina, stanza o sessione chiude il socket precedente. Le pagine Chat e PostDetail deduplicano tramite `_id` gli aggiornamenti REST e socket, che possono arrivare in qualsiasi ordine.
+L'hook `useSocket` apre la connessione solo con una sessione e una chat o un post attivo. Usa il dominio del frontend, salvo l'override `VITE_SOCKET_URL`, e legge il token dal `localStorage` ad ogni handshake. Ripete il join ad ogni `connect` e, ricevuto l'ack positivo, richiama `onReady` per ricaricare la cronologia REST: il recupero degli eventi persi è applicativo, non una ritrasmissione automatica di Socket.IO. Chat e PostDetail uniscono lo snapshot agli eventi arrivati durante la richiesta tramite `utils/realtime.js`, deduplicano per `_id`, ordinano per data e scartano risposte superate o riferite a una pagina diversa.
+
+Su `connect_error` con `error.data.code === 'TOKEN_EXPIRED'` o su `session_expired`, l'hook usa `refreshSession()` e riapre la connessione dopo il rinnovo. Se il rinnovo fallisce temporaneamente e la sessione locale esiste ancora, riprova dopo 5 secondi. L'ack del join ha un timeout di 10 secondi: timeout ed errori `TEMPORARY_ERROR` causano un nuovo tentativo dopo 2 secondi; un errore nel caricamento della cronologia causa un tentativo dopo 5 secondi. Il cambio di pagina, stanza o sessione chiude il socket precedente, cancella i timer e invalida la sincronizzazione in corso.
 
 ---
 
@@ -531,11 +538,12 @@ JamPulse integra controlli difensivi a più livelli:
    - È presente un controllo che impedisce a un amministratore di declassare o eliminare per sbaglio il proprio account da endpoint dedicati.
 4. **Protezione da Auto-Privilege Escalation**:
    - L'endpoint di registrazione (`authController.register`) impone server-side `role: 'user'`, ignorando qualsiasi tentativo malevolo di passare `"role": "admin"` nel body della richiesta.
-5. **Silent Refresh Interceptor Trasparente con Coda Concorrente**:
+5. **Silent Refresh condiviso tra REST e Socket.IO**:
    - L'interceptor globale di Axios (`frontend/src/axios.js`) rileva gli errori HTTP 401 delle richieste ammesse al retry, senza filtrare sul codice `TOKEN_EXPIRED`.
-   - Gestisce la concorrenza tramite il **Request Queue Pattern**: se più componenti effettuano richieste parallele mentre il token scade, solo la prima effettua la chiamata a `/auth/refresh`, mentre le altre attendono nella `failedQueue`.
+   - `refreshSession()` riutilizza `refreshPromise`: richieste REST e recuperi Socket.IO concorrenti attendono la stessa rotazione nella scheda corrente. Login, registrazione, refresh, logout e richieste già ritentate sono esclusi dal refresh automatico dell'interceptor.
    - Ricevuto il nuovo token, le richieste in sospeso vengono rieseguite automaticamente, senza richiedere nuovamente le credenziali se il rinnovo riesce.
-   - Se manca il Refresh Token o il suo rinnovo fallisce, anche per errori di rete o del server, la sessione locale viene azzerata con redirect a `/login`. Una richiesta già contrassegnata come ritentata non avvia un ulteriore refresh.
+   - `session-changed` sincronizza AuthContext con i token salvati; il contesto ascolta anche gli eventi `storage`. Un rinnovo completato dopo un cambio di sessione viene scartato, evitando di ripristinare una sessione chiusa durante il refresh.
+   - Se manca il Refresh Token o il rinnovo restituisce 401/403 per la sessione corrente, la sessione locale viene azzerata e le route protette riportano a `/login`. Gli errori di rete e del server non cancellano la sessione. La Promise condivisa non coordina i rinnovi di altre schede o dispositivi.
 
 ---
 
@@ -604,6 +612,7 @@ JamPulse/
 │   │   │   └── Search.jsx                 # Motore di ricerca con filtri avanzati
 │   │   ├── services/                      # Client API Axios disaccoppiati per entità
 │   │   ├── utils/
+│   │   │   ├── realtime.js                # Fusione snapshot REST ed eventi per stanza
 │   │   │   ├── musicOptions.js            # Opzioni UI per strumenti e generi musicali
 │   │   │   └── timeUtils.js               # Formattazione timestamp date e orari
 │   │   ├── App.jsx                        # Definizione albero rotte e ProtectedRoute
@@ -659,7 +668,7 @@ JamPulse/
    - 🌐 **Frontend Web App**: [http://localhost](http://localhost)
    - 🩺 **Health Check**: [http://localhost/api/v1/health](http://localhost/api/v1/health)
 
-**Limiti della configurazione fornita**: il gateway non inoltra `/api-docs` al backend e la porta `4000` non è pubblicata sull’host. Swagger non è quindi disponibile tramite `http://localhost/api-docs`; inoltre la connessione Socket.IO diretta dell’hook a `http://localhost:4000` non raggiunge questo backend. Per provare Swagger e gli aggiornamenti real-time con il codice attuale, usare l’avvio locale descritto nella sezione seguente. I messaggi e i commenti restano inviabili via API REST nello stack Docker.
+**Limiti della configurazione fornita**: il gateway non inoltra `/api-docs` al backend e la porta `4000` non è pubblicata sull’host. Swagger non è quindi disponibile tramite `http://localhost/api-docs`; per provarlo usare l'avvio locale descritto nella sezione seguente. REST e Socket.IO utilizzano invece i proxy del gateway sulla porta `80`, senza richiedere l'esposizione diretta del backend.
 
 5. **Arresto dei container**:
    ```bash
@@ -720,7 +729,7 @@ npm run dev
 L'applicazione sarà accessibile all'indirizzo:
 - 🌐 **App Frontend**: [http://localhost:5173](http://localhost:5173)
 
-> ℹ️ **Nota sul Proxy di Sviluppo**: Vite configura il proxy di `/api` e `/socket.io` verso `http://localhost:4000`. Le chiamate API usano il proxy; l’hook `useSocket` attuale utilizza direttamente `http://localhost:4000`, quindi il backend deve essere raggiungibile dal browser a questo indirizzo e consentire l’origine del frontend tramite CORS.
+> ℹ️ **Nota sul Proxy di Sviluppo**: Vite inoltra `/api` e `/socket.io` verso `http://localhost:4000`; sia Axios sia `useSocket` usano l'origine del frontend e i relativi proxy. `VITE_SOCKET_URL` consente un'origine Socket.IO separata, che deve essere raggiungibile dal browser e autorizzata tramite CORS. La variabile viene letta da Vite all'avvio o durante la build, non dal container frontend a runtime.
 
 ---
 
@@ -738,6 +747,7 @@ Il file di configurazione `backend/.env` controlla i parametri operativi del ser
 | `JWT_REFRESH_EXPIRES_IN` | No | `7d` | Tempo di validità del Refresh Token a lunga durata (es. `7d`, `30d`). |
 | `CORS_ORIGIN` | No | Default `*`; esempio locale `http://localhost:5173` | Origine HTTP autorizzata a effettuare chiamate cross-origin (`*` o indirizzo specifico). |
 | `JWT_EXPIRES_IN` | No | Nessun valore autonomo predefinito | Fallback legacy usato se manca `JWT_ACCESS_EXPIRES_IN`; se mancano entrambe, la durata è `15m`. |
+| `VITE_SOCKET_URL` | No; variabile frontend | Origine del frontend | Override dell'URL Socket.IO. Impostare nell'ambiente Vite all'avvio o durante la build; se omessa usa `/socket.io/` tramite il proxy Vite o Nginx. |
 
 ---
 

@@ -50,6 +50,11 @@ deactivate BE
 note over FE, Auth
 Il diagramma mostra le richieste HTTP.
 Su 401 Axios può rinnovare i token e ritentare la richiesta.
-Se il refresh fallisce, pulisce la sessione e torna al login.
+REST e Socket.IO condividono refreshSession() nella stessa scheda.
+Se il Refresh Token manca o il rinnovo restituisce 401/403,
+la sessione viene pulita e le route protette riportano al login.
+Gli errori temporanei di rete o del server mantengono la sessione
+e vengono propagati al chiamante; la richiesta non viene ritentata
+automaticamente finché il rinnovo non riesce.
 end note
 @enduml
