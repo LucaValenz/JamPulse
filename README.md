@@ -822,7 +822,7 @@ npm run seed
 
 ## 📖 Documentazione Interattiva Swagger & Health Check
 
-JamPulse include una UI Swagger/OpenAPI 3.0 per consultare e provare le operazioni descritte in `backend/swagger.js`. La specifica documenta il multipart dei post, ma non include il GET delle immagini, le due operazioni amministrative sugli utenti e gli schemi `RefreshToken` e `PostImage`.
+JamPulse include una UI Swagger/OpenAPI 3.0 per consultare e provare le operazioni descritte in `backend/swagger.js`. La specifica documenta la creazione dei post in JSON o multipart, il download pubblico delle immagini tramite `GET /api/v1/uploads/{filename}` e le operazioni amministrative `DELETE /api/v1/users/{id}` e `PATCH /api/v1/users/{id}/role`. Include gli schemi delle risorse esposte dalle API e le risposte di errore di autenticazione; i modelli di persistenza interni `RefreshToken` e `PostImage` non hanno schemi dedicati.
 
 - **Con il Compose attuale**: Swagger non è esposto dal gateway. `/api-docs` viene inoltrato alla SPA; anche il server di prova configurato da Swagger (`http://localhost:4000`) richiede un backend raggiungibile dal browser su quella porta.
 - **In Locale**: [http://localhost:4000/api-docs](http://localhost:4000/api-docs)
@@ -874,7 +874,7 @@ Il file [LICENSE](LICENSE) contiene la licenza MIT. Il manifest `backend/package
 
 ## Verifica e documentazione d'esame
 
-Documentazione confrontata con il codice il **28 ottobre 2026**. Per la mappa dettagliata dei file consultare [STRUTTURA_PROGETTO.md](STRUTTURA_PROGETTO.md); per sorgenti, derivati e rigenerazione consultare [STATO_DOCUMENTAZIONE.txt](<Documentazione - Esame/STATO_DOCUMENTAZIONE.txt>). I quattro diagrammi `.txt` contengono PlantUML, utilizzabile anche su PlantText; gli altri due TXT sono relazioni testuali. Le cartelle `old/` e `old 2/` sono archivi storici. DOCX e PNG non sono stati aggiornati in questa revisione.
+Documentazione confrontata con il codice il **28 ottobre 2026**, incluso l'aggiornamento di `backend/swagger.js`. Per la mappa dettagliata dei file consultare [STRUTTURA_PROGETTO.md](STRUTTURA_PROGETTO.md); i sorgenti e i documenti derivati sono nella cartella [Documentazione - Esame](<Documentazione - Esame/>). I quattro diagrammi `.txt` contengono PlantUML, utilizzabile anche su PlantText; gli altri due TXT sono relazioni testuali. Per rigenerare le immagini dei diagrammi, utilizzare i rispettivi sorgenti PlantUML. Le cartelle `old/` e `old 2/` sono archivi storici. DOCX e PNG non sono stati aggiornati in questa revisione.
 
 Il frontend espone `npm run lint` e `npm run build`. Il backend dichiara `npm test` (`node --test tests/*.test.js`), ma nel repository non sono presenti test corrispondenti: lo script non dimostra copertura. Il health check verifica la risposta del processo HTTP e non esegue una query di disponibilità MongoDB. Non è configurato un healthcheck Docker Compose.
 
