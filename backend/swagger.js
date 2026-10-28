@@ -15,13 +15,31 @@ const options = {
             },
         ],
         tags: [
+            { name: "Health", description: "Stato del server" },
             { name: "Auth", description: "Autenticazione e registrazione" },
             { name: "Posts", description: "Gestione dei post e dei like" },
             { name: "Comments", description: "Gestione dei commenti ai post" },
             { name: "Users", description: "Gestione utenti e follow" },
-            { name: "Chats", description: "Gestione chat private" }
+            { name: "Chats", description: "Gestione chat private" },
+            { name: "Media", description: "Immagini pubbliche dei post" }
         ],
         components: {
+            responses: {
+                Unauthorized: {
+                    description: "Access Token mancante, scaduto o non valido",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    message: { type: "string" },
+                                    code: { type: "string", enum: ["TOKEN_MISSING", "TOKEN_EXPIRED", "INVALID_TOKEN"] }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             securitySchemes: {                
                 bearerAuth: {
                     type: "http",
@@ -31,6 +49,20 @@ const options = {
                 },
             },
             schemas: {
+                UserSummary: {
+                    type: "object",
+                    properties: {
+                        _id: { type: "string" },
+                        username: { type: "string" }
+                    }
+                },
+                UserReference: {
+                    description: "ID utente nelle risposte non popolate; oggetto con _id e username nelle risposte popolate. Null se l'utente popolato è stato eliminato.",
+                    oneOf: [
+                        { type: "string", nullable: true },
+                        { $ref: "#/components/schemas/UserSummary" }
+                    ]
+                },
                 // Modello Utente completo
                 User: {
                     type: "object",
@@ -43,7 +75,9 @@ const options = {
                         genres: { type: "array", items: { type: "string" } },
                         following: { type: "array", items: { type: "string" } },
                         followers: { type: "array", items: { type: "string" } },
-                        role: { type: "string", enum: ["user", "admin"], example: "user" }
+                        role: { type: "string", enum: ["user", "admin"], example: "user" },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" }
                     },
                 },
                 // Modello Post
@@ -51,10 +85,12 @@ const options = {
                     type: "object",
                     properties: {
                         _id: { type: "string" },
-                        userID: { type: "string" },
+                        userID: { $ref: "#/components/schemas/UserReference" },
                         content: { type: "string" },
-                        media: { type: "string" },
+                        media: { type: "string", description: "URL esterno, percorso relativo /api/v1/uploads/{filename} oppure stringa vuota per post senza immagine" },
                         likes: { type: "array", items: { type: "string" } },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" },
                     },
                 },
                 // Modello Commento
@@ -63,8 +99,10 @@ const options = {
                     properties: {
                         _id: { type: "string" },
                         postId: { type: "string" },
-                        authorId: { type: "string" },
+                        authorId: { $ref: "#/components/schemas/UserReference" },
                         text: { type: "string" },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" },
                     }
                 },
                 // Modello Chat 
@@ -72,7 +110,9 @@ const options = {
                     type: "object",
                     properties: {
                         _id: { type: "string" },
-                        participants: { type: "array", items: { type: "string" } }
+                        participants: { type: "array", items: { $ref: "#/components/schemas/UserReference" } },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" }
                     }
                 },
                 // Modello Messaggio 
@@ -81,13 +121,44 @@ const options = {
                     properties: {
                         _id: { type: "string" },
                         chatID: { type: "string" },
-                        senderID: { type: "string" },
-                        content: { type: "string" }
+                        senderID: { $ref: "#/components/schemas/UserReference" },
+                        content: { type: "string" },
+                        createdAt: { type: "string", format: "date-time" },
+                        updatedAt: { type: "string", format: "date-time" }
                     }
                 }
             }
         },
         paths: {
+            "/api/v1/uploads/{filename}": {
+                get: {
+                    tags: ["Media"],
+                    summary: "Scarica un'immagine di un post",
+                    description: "Endpoint pubblico: restituisce il binario conservato in MongoDB. Il nome è generato dal server e restituito nel campo media del post.",
+                    security: [],
+                    parameters: [{
+                        name: "filename", in: "path", required: true,
+                        schema: { type: "string", pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|gif|webp)$" }
+                    }],
+                    responses: {
+                        200: {
+                            description: "Immagine del post",
+                            headers: {
+                                "Cache-Control": { schema: { type: "string", example: "public, max-age=3600" } },
+                                "X-Content-Type-Options": { schema: { type: "string", example: "nosniff" } }
+                            },
+                            content: {
+                                "image/jpeg": { schema: { type: "string", format: "binary" } },
+                                "image/png": { schema: { type: "string", format: "binary" } },
+                                "image/gif": { schema: { type: "string", format: "binary" } },
+                                "image/webp": { schema: { type: "string", format: "binary" } }
+                            }
+                        },
+                        404: { description: "Immagine non trovata o nome file non valido" },
+                        500: { description: "Errore interno del server" }
+                    }
+                }
+            },
             // --- ROTTA DI HEALTH ---
             "/api/v1/health": {
                 get: {
@@ -126,6 +197,7 @@ const options = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["email", "username", "password"],
                                     properties: {
                                         username: { type: "string", example: "jimihendrix" },
                                         email: { type: "string", example: "jimi@example.com" },
@@ -150,6 +222,7 @@ const options = {
                                                 type: "object",
                                                 properties: {
                                                     id: { type: "string" },
+                                                    role: { type: "string", enum: ["user"], example: "user" },
                                                     email: { type: "string" },
                                                     username: { type: "string" },
                                                     instruments: { type: "array", items: { type: "string" } },
@@ -162,7 +235,7 @@ const options = {
                             }
                         },
                         400: {
-                            description: "Conflitto - Dati duplicati",
+                            description: "Campi obbligatori mancanti o email/username già utilizzati",
                             content: {
                                 "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Email o Username già utilizzati" } } } }
                             }
@@ -182,6 +255,7 @@ const options = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["username", "password"],
                                     properties: {
                                         username: { type: "string", example: "jimihendrix" },
                                         password: { type: "string", example: "password123" }
@@ -191,6 +265,7 @@ const options = {
                         }
                     },
                     responses: {
+                        400: { description: "Username o password mancanti" },
                         200: {
                             description: "Login effettuato con successo",
                             content: {
@@ -244,6 +319,7 @@ const options = {
                         }
                     },
                     responses: {
+                        404: { description: "Utente associato al Refresh Token non trovato" },
                         200: {
                             description: "Token rinnovati con successo",
                             content: {
@@ -268,7 +344,7 @@ const options = {
                         401: {
                             description: "Refresh token non valido o scaduto",
                             content: {
-                                "application/json": { schema: { type: "object", properties: { message: { type: "string" }, code: { type: "string", example: "REFRESH_TOKEN_EXPIRED" } } } }
+                                "application/json": { schema: { type: "object", properties: { message: { type: "string" }, code: { type: "string", enum: ["REFRESH_TOKEN_EXPIRED", "REFRESH_TOKEN_INVALID", "REFRESH_TOKEN_REVOKED"] } } } }
                             }
                         },
                         500: { description: "Errore interno del server" }
@@ -279,9 +355,9 @@ const options = {
                 post: {
                     tags: ["Auth"],
                     summary: "Logout utente",
-                    description: "Revoca il Refresh Token invalidando la sessione attiva nel database.",
+                    description: "Revoca il Refresh Token invalidando la sessione attiva nel database. Inviare un body JSON, anche vuoto ({}): refreshToken è facoltativo e, se omesso, viene restituito il messaggio di successo senza revocare sessioni.",
                     requestBody: {
-                        required: false,
+                        required: true,
                         content: {
                             "application/json": {
                                 schema: {
@@ -312,6 +388,7 @@ const options = {
                     description: "Restituisce il feed di tutti i post, ordinati dal più recente. L'autore viene popolato con il suo username.",
                     security: [{ bearerAuth: [] }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Lista dei post recuperata con successo",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Post" } } } }
@@ -322,7 +399,7 @@ const options = {
                 post: {
                     tags: ["Posts"],
                     summary: "Crea un nuovo post",
-                    description: "Crea un post per l'utente loggato. Accetta un URL immagine oppure un file JPG, PNG, GIF o WebP fino a 5 MB (campo image).",
+                    description: "Crea un post per l'utente loggato. Accetta un URL immagine oppure un file JPG, PNG, GIF o WebP fino a 5 MiB (5.242.880 byte, campo image). File e URL sono alternativi; il testo è sempre obbligatorio. I file sono conservati in MongoDB e media contiene un percorso relativo /api/v1/uploads/{filename}.",
                     security: [{ bearerAuth: [] }],
                     requestBody: {
                         required: true,
@@ -330,6 +407,7 @@ const options = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["content"],
                                     properties: {
                                         content: { type: "string", example: "Oggi ho provato un nuovo assolo!" },
                                         media: { type: "string", example: "https://link-immagine.com/foto.jpg" }
@@ -345,16 +423,17 @@ const options = {
                                     properties: {
                                         content: { type: "string" },
                                         media: { type: "string", description: "URL alternativo al file image" },
-                                        image: { type: "string", format: "binary", description: "JPG, PNG, GIF o WebP, massimo 5 MB" }
+                                        image: { type: "string", format: "binary", description: "JPG, PNG, GIF o WebP, massimo 5 MiB (5.242.880 byte)" }
                                     }
                                 }
                             }
                         }
                     },
                     responses: {
-                        201: { description: "Post creato con successo" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        201: { description: "Post creato con successo", content: { "application/json": { schema: { $ref: "#/components/schemas/Post" } } } },
                         400: { description: "Contenuto o immagine non validi" },
-                        413: { description: "Immagine superiore a 5 MB" },
+                        413: { description: "Immagine superiore a 5 MiB (5.242.880 byte)" },
                         500: { description: "Errore interno del server" }
                     }
                 }
@@ -366,7 +445,9 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
-                        200: { description: "Post trovato" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID post non valido" },
+                        200: { description: "Post trovato", content: { "application/json": { schema: { $ref: "#/components/schemas/Post" } } } },
                         404: { description: "Post non trovato" },
                         500: { description: "Errore interno del server" }
                     }
@@ -374,7 +455,7 @@ const options = {
                 put: {
                     tags: ["Posts"],
                     summary: "Modifica un post esistente",
-                    description: "Aggiorna contenuto o media di un post. Solo l'autore originale può effettuare la modifica.",
+                    description: "Aggiorna il contenuto obbligatorio e il campo media opzionale di un post (solo JSON). Solo l'autore originale può effettuare la modifica.",
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     requestBody: {
@@ -383,6 +464,7 @@ const options = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["content"],
                                     properties: {
                                         content: { type: "string" },
                                         media: { type: "string" }
@@ -392,7 +474,9 @@ const options = {
                         }
                     },
                     responses: {
-                        200: { description: "Post aggiornato con successo" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID post non valido o contenuto vuoto" },
+                        200: { description: "Post aggiornato con successo", content: { "application/json": { schema: { $ref: "#/components/schemas/Post" } } } },
                         403: { description: "Non sei autorizzato a modificare questo post" },
                         404: { description: "Post non trovato" },
                         500: { description: "Errore interno del server" }
@@ -401,10 +485,12 @@ const options = {
                 delete: {
                     tags: ["Posts"],
                     summary: "Elimina un post",
-                    description: "Rimuove un post dal database. Solo l'autore originale può eliminarlo.",
+                    description: "Rimuove un post dal database. Possono eliminarlo l'autore originale o un amministratore.",
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID post non valido" },
                         200: { description: "Post eliminato con successo" },
                         403: { description: "Non sei autorizzato a eliminare questo post" },
                         404: { description: "Post non trovato" },
@@ -420,6 +506,8 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID post non valido" },
                         200: {
                             description: "Operazione completata con successo",
                             content: {
@@ -450,6 +538,7 @@ const options = {
                         { name: "id", in: "path", required: true, schema: { type: "string" }, description: "L'ID del post" }
                     ],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Lista dei commenti recuperata",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Comment" } } } }
@@ -469,11 +558,12 @@ const options = {
                         required: true,
                         content: {
                             "application/json": {
-                                schema: { type: "object", properties: { text: { type: "string", example: "Che bello questo assolo!" } } }
+                                schema: { type: "object", required: ["text"], properties: { text: { type: "string", example: "Che bello questo assolo!" } } }
                             }
                         }
                     },
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         201: {
                             description: "Commento creato con successo",
                             content: {
@@ -506,12 +596,13 @@ const options = {
                         required: true,
                         content: {
                             "application/json": {
-                                schema: { type: "object", properties: { text: { type: "string", example: "Ho corretto il mio commento!" } } }
+                                schema: { type: "object", required: ["text"], properties: { text: { type: "string", example: "Ho corretto il mio commento!" } } }
                             }
                         }
                     },
                     responses: {
-                        200: { description: "Commento aggiornato con successo" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        200: { description: "Commento aggiornato con successo", content: { "application/json": { schema: { $ref: "#/components/schemas/Comment" } } } },
                         403: {
                             description: "Azione non autorizzata (non sei l'autore)",
                             content: { "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Azione non autorizzata" } } } } }
@@ -526,13 +617,14 @@ const options = {
                 delete: {
                     tags: ["Comments"],
                     summary: "Elimina un commento",
-                    description: "Rimuove definitivamente un commento dal database. Solo l'autore può effettuare questa operazione.",
+                    description: "Rimuove definitivamente un commento dal database. Possono effettuare questa operazione l'autore o un amministratore.",
                     security: [{ bearerAuth: [] }],
                     parameters: [
                         { name: "id", in: "path", required: true, schema: { type: "string" }, description: "ID del post" },
                         { name: "commentId", in: "path", required: true, schema: { type: "string" }, description: "ID del commento" }
                     ],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Commento eliminato",
                             content: { "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Commento eliminato correttamente" } } } } }
@@ -557,6 +649,7 @@ const options = {
                     description: "Restituisce i dati dell'utente attualmente autenticato (esclusa la password).",
                     security: [{ bearerAuth: [] }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Profilo recuperato con successo",
                             content: { "application/json": { schema: { $ref: "#/components/schemas/User" } } }
@@ -586,7 +679,8 @@ const options = {
                         }
                     },
                     responses: {
-                        200: { description: "Profilo aggiornato con successo" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        200: { description: "Profilo aggiornato con successo", content: { "application/json": { schema: { $ref: "#/components/schemas/User" } } } },
                         404: { description: "Utente non trovato" },
                         500: { description: "Errore interno del server" }
                     }
@@ -599,9 +693,10 @@ const options = {
                     description: "Restituisce la lista degli utenti seguiti dall'utente loggato, popolati con username e ID.",
                     security: [{ bearerAuth: [] }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Lista dei following recuperata",
-                            content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/User" } } } }
+                            content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/UserSummary" } } } }
                         },
                         404: { description: "Utente non trovato" },
                         500: { description: "Errore interno del server" }
@@ -615,6 +710,7 @@ const options = {
                     description: "Restituisce la lista completa degli iscritti al social network (password escluse).",
                     security: [{ bearerAuth: [] }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Lista utenti recuperata",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/User" } } } }
@@ -624,6 +720,24 @@ const options = {
                 }
             },
             "/api/v1/users/{id}": {
+                delete: {
+                    tags: ["Users"],
+                    summary: "Elimina un utente (solo admin)",
+                    description: "Richiede un Access Token con ruolo admin. Un amministratore non può eliminare il proprio account da questa rotta.",
+                    security: [{ bearerAuth: [] }],
+                    parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+                    responses: {
+                        200: {
+                            description: "Utente eliminato dall'amministratore",
+                            content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } }
+                        },
+                        400: { description: "ID utente non valido o tentativo di eliminare il proprio account" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        403: { description: "Privilegi amministrativi insufficienti (code: FORBIDDEN)" },
+                        404: { description: "Utente non trovato" },
+                        500: { description: "Errore interno del server" }
+                    }
+                },
                 get: {
                     tags: ["Users"],
                     summary: "Ottieni un utente specifico",
@@ -631,7 +745,51 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
-                        200: { description: "Utente trovato" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID utente non valido" },
+                        200: { description: "Utente trovato", content: { "application/json": { schema: { $ref: "#/components/schemas/User" } } } },
+                        404: { description: "Utente non trovato" },
+                        500: { description: "Errore interno del server" }
+                    }
+                }
+            },
+            "/api/v1/users/{id}/role": {
+                patch: {
+                    tags: ["Users"],
+                    summary: "Modifica il ruolo di un utente (solo admin)",
+                    description: "Richiede un Access Token con ruolo admin. Un amministratore non può modificare il proprio ruolo. Il nuovo ruolo viene incluso negli Access Token emessi successivamente; quelli già emessi mantengono il ruolo precedente fino alla scadenza.",
+                    security: [{ bearerAuth: [] }],
+                    parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    type: "object",
+                                    required: ["role"],
+                                    properties: { role: { type: "string", enum: ["user", "admin"] } }
+                                }
+                            }
+                        }
+                    },
+                    responses: {
+                        200: {
+                            description: "Ruolo aggiornato",
+                            content: {
+                                "application/json": {
+                                    schema: {
+                                        type: "object",
+                                        properties: {
+                                            message: { type: "string" },
+                                            user: { $ref: "#/components/schemas/User" }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        400: { description: "Ruolo o ID non valido, oppure tentativo di modificare il proprio ruolo" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        403: { description: "Privilegi amministrativi insufficienti (code: FORBIDDEN)" },
                         404: { description: "Utente non trovato" },
                         500: { description: "Errore interno del server" }
                     }
@@ -645,6 +803,8 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID utente non valido" },
                         200: {
                             description: "Lista post dell'utente recuperata",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Post" } } } }
@@ -661,8 +821,9 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: { description: "Ora stai seguendo questo utente" },
-                        400: { description: "Azione non valida (non puoi seguire te stesso o stai già seguendo l'utente)" },
+                        400: { description: "ID utente non valido, tentativo di seguire se stessi o utente già seguito" },
                         404: { description: "Utente non trovato" },
                         500: { description: "Errore interno del server" }
                     }
@@ -674,8 +835,9 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: { description: "Hai smesso di seguire questo utente" },
-                        400: { description: "Azione non valida (non puoi smettere di seguire te stesso)" },
+                        400: { description: "ID utente non valido o tentativo di smettere di seguire se stessi" },
                         500: { description: "Errore interno del server" }
                     }
                 }
@@ -688,6 +850,7 @@ const options = {
                     description: "Restituisce tutte le conversazioni a cui partecipa l'utente loggato, ordinate dalla più recente. I partecipanti vengono popolati con il loro username.",
                     security: [{ bearerAuth: [] }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Lista delle chat recuperata con successo",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Chat" } } } }
@@ -706,6 +869,7 @@ const options = {
                             "application/json": {
                                 schema: {
                                     type: "object",
+                                    required: ["targetUserId"],
                                     properties: {
                                         targetUserId: { type: "string", example: "665a1b2c3d4e5f6789012345" }
                                     }
@@ -714,6 +878,7 @@ const options = {
                         }
                     },
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Chat esistente recuperata",
                             content: { "application/json": { schema: { $ref: "#/components/schemas/Chat" } } }
@@ -738,6 +903,7 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "L'ID della chat" }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: {
                             description: "Chat eliminata correttamente",
                             content: { "application/json": { schema: { type: "object", properties: { message: { type: "string", example: "Chat eliminata correttamente" } } } } }
@@ -763,6 +929,8 @@ const options = {
                     security: [{ bearerAuth: [] }],
                     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "ID della chat" }],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        400: { description: "ID chat non valido" },
                         200: { 
                             description: "Messaggi recuperati",
                             content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Message" } } } }
@@ -781,15 +949,18 @@ const options = {
                     requestBody: {
                         required: true,
                         content: {
-                            "application/json": { schema: { type: "object", properties: { content: { type: "string", example: "Ciao, come stai?" } } } }
+                            "application/json": { schema: { type: "object", required: ["content"], properties: { content: { type: "string", example: "Ciao, come stai?" } } } }
                         }
                     },
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        404: { description: "Chat non trovata" },
+                        403: { description: "Non sei un partecipante della chat" },
                         201: { 
                             description: "Messaggio inviato",
                             content: { "application/json": { schema: { $ref: "#/components/schemas/Message" } } }
                         },
-                        400: { description: "Il contenuto del messaggio è obbligatorio" },
+                        400: { description: "Contenuto mancante o ID chat non valido" },
                         500: { description: "Errore interno del server" }
                     }
                 }
@@ -807,11 +978,12 @@ const options = {
                     requestBody: {
                         required: true,
                         content: {
-                            "application/json": { schema: { type: "object", properties: { content: { type: "string", example: "Messaggio corretto" } } } }
+                            "application/json": { schema: { type: "object", required: ["content"], properties: { content: { type: "string", example: "Messaggio corretto" } } } }
                         }
                     },
                     responses: {
-                        200: { description: "Messaggio aggiornato" },
+                        401: { $ref: "#/components/responses/Unauthorized" },
+                        200: { description: "Messaggio aggiornato", content: { "application/json": { schema: { $ref: "#/components/schemas/Message" } } } },
                         403: { description: "Azione non autorizzata (non sei il mittente)" },
                         404: { description: "Messaggio non trovato" },
                         500: { description: "Errore interno del server" }
@@ -827,6 +999,7 @@ const options = {
                         { name: "messageId", in: "path", required: true, schema: { type: "string" }, description: "ID del messaggio" }
                     ],
                     responses: {
+                        401: { $ref: "#/components/responses/Unauthorized" },
                         200: { description: "Messaggio eliminato con successo" },
                         403: { description: "Azione non autorizzata" },
                         404: { description: "Messaggio non trovato" },
