@@ -30,7 +30,7 @@ rectangle "JamPulse Application" {
 
     package "Post" {
         usecase "Visualizza Post" as UC8
-        usecase "Crea Nuovo Post" as UC9
+        usecase "Crea Nuovo Post\n(Testo e immagine da URL o file)" as UC9
         usecase "Elimina Proprio Post" as UC10
         usecase "Metti / Togli Like" as UC11
         usecase "Modifica Proprio Post\n(tramite API)" as UC_UpdatePost
@@ -49,6 +49,7 @@ rectangle "JamPulse Application" {
     }
 
     package "Chat" {
+        usecase "Cerca Altri Utenti\nper Username e Avvia Chat" as UC_SearchChat
         usecase "Visualizza Lista Chat" as UC17
         usecase "Crea o Recupera\nChat Privata" as UC18
         usecase "Invia / Ricevi Messaggi" as UC19
@@ -89,6 +90,7 @@ User --> UC_UpdateComment
 User --> UC15
 User --> UC16
 User --> UC17
+User --> UC_SearchChat
 User --> UC18
 User --> UC19
 User --> UC_EditMessage
@@ -107,5 +109,11 @@ end note
 
 note bottom of UC18
 L'applicazione crea conversazioni tra due utenti.
+Non è necessario seguire il destinatario.
+end note
+note bottom of UC9
+Un solo file JPEG, PNG, GIF o WebP fino a 5 MiB.
+File e URL sono alternativi; binari in MongoDB.
+La lettura delle immagini caricate è pubblica.
 end note
 @enduml

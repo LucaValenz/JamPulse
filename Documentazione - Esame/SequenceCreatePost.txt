@@ -11,10 +11,12 @@ actor "Utente" as User
 participant "Frontend (React)" as FE
 participant "Middleware JWT" as Auth
 participant "Backend (Express)" as BE
+participant "Multer / postImages" as Images
 database "MongoDB" as DB
 
-User -> FE: Compila il post e pubblica
-FE -> BE: POST /api/v1/posts { content, media }\nAuthorization: Bearer <accessToken>
+User -> FE: Compila il post, sceglie file oppure URL e pubblica
+FE -> FE: Controlla MIME e limite 5 MiB del file\nAnteprima con createObjectURL
+FE -> BE: POST /api/v1/posts FormData: content e image oppure media\nAuthorization: Bearer <accessToken>
 activate BE
 
 BE -> Auth: verifyToken(req, res, next)
@@ -27,10 +29,23 @@ alt Token mancante, scaduto o non valido
     BE --> FE: 401 Unauthorized (risposta del middleware)
 else Token valido
     Auth -> Auth: req.user = { id, role }
-    Auth -> BE: next(): prosegue nel controller
-    BE -> BE: Validazione del contenuto non vuoto
+    Auth -> BE: next(): prosegue nel router
+    BE -> Images: postUpload: Multer memoryStorage, single('image')
+    Images -> Images: Limiti: 1 file, 2 campi, 3 parti\nMIME JPEG/PNG/GIF/WebP, massimo 5 MiB
+    alt MIME o multipart non validi / file troppo grande
+        Images --> FE: 400 oppure 413 (dimensione)
+    else Parsing riuscito (JSON ancora supportato)
+    Images --> BE: req.body e req.file opzionale
+    BE -> BE: Valida content stringa non vuota e media stringa\nRifiuta file e URL non vuoto insieme
     alt Dati validi
-        BE -> BE: new Post({ userID: req.user.id,\ncontent: content.trim(), media: media || '' })
+        opt File presente
+            BE -> Images: savePostImage(req.file)
+            Images -> Images: Controlla dimensione e firma iniziale\nJPEG / PNG / GIF / WebP
+            Images -> DB: PostImage.create({_id: UUID.ext, data, contentType})
+            DB --> Images: Immagine salvata
+            Images --> BE: uploadedMedia = /api/v1/uploads/UUID.ext
+        end
+        BE -> BE: new Post({ userID: req.user.id, content: content.trim(),\nmedia: uploadedMedia || media?.trim() || '' })
         BE -> DB: newPost.save()
         DB --> BE: Post salvato (autore come ObjectId)
         BE --> FE: 201 Created + newPost (senza populate)
@@ -39,10 +54,18 @@ else Token valido
         BE -> DB: Post.find({}).populate('userID', 'username')\n.sort({ createdAt: -1 })
         DB --> BE: Feed con autori popolati
         BE --> FE: 200 OK + lista post
+        opt Immagine caricata nel feed
+            FE -> BE: GET /api/v1/uploads/UUID.ext (pubblico)
+            BE -> Images: servePostImage
+            Images -> DB: PostImage.findById(filename)
+            DB --> Images: Binario e contentType
+            Images --> FE: MIME, binario, nosniff e cache di un'ora\n404 per nome non valido o immagine assente
+        end
         FE --> User: Mostra il feed aggiornato
     else Dati non validi
         BE --> FE: 400 Bad Request
         FE --> User: Mostra messaggio di errore
+    end
     end
 end
 
@@ -56,5 +79,14 @@ la sessione viene pulita e le route protette riportano al login.
 Gli errori temporanei di rete o del server mantengono la sessione
 e vengono propagati al chiamante; la richiesta non viene ritentata
 automaticamente finché il rinnovo non riesce.
+end note
+note over BE, DB
+media è uploadedMedia oppure media.trim() oppure ''.
+Firma non supportata: 400 prima del salvataggio del Post.
+Errore di salvataggio Post: tenta removePostImage, poi restituisce 500.
+Immagine e Post non condividono una transazione.
+La firma non equivale alla decodifica completa dell'immagine.
+Il browser imposta Content-Type e boundary del multipart.
+L'upload è disponibile nella POST, non nella PUT del post.
 end note
 @enduml

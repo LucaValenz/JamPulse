@@ -1,16 +1,35 @@
-# React + Vite
+# Frontend JamPulse
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SPA React con Material UI, React Router, Axios e Socket.IO. Per architettura, API, configurazione Docker e account demo consultare il [README principale](../README.md) e la [struttura del progetto](../STRUTTURA_PROGETTO.md).
 
-Currently, two official plugins are available:
+## Sviluppo locale
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Avviare MongoDB e il backend sulla porta `4000`, configurando `backend/.env` dal relativo `.env.example`. Dalla cartella `frontend`:
 
-## React Compiler
+```sh
+npm ci
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+L'app è disponibile su `http://localhost:5173`. Vite inoltra `/api` e `/socket.io` a `http://localhost:4000`; Axios usa `/api/v1` e Socket.IO l'origine del frontend. `VITE_SOCKET_URL` permette un'origine socket alternativa all'avvio o durante la build; il backend deve autorizzare l'origine del browser con `CORS_ORIGIN`.
 
-## Expanding the ESLint configuration
+## Comandi
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Comando | Uso |
+|---|---|
+| `npm run dev` | Server Vite con aggiornamento durante lo sviluppo |
+| `npm run lint` | ESLint su JavaScript e JSX |
+| `npm run build` | Build di produzione in `dist/` |
+| `npm run preview` | Anteprima della build; non configura i proxy di sviluppo |
+
+Usare Node compatibile con i lockfile: `^20.19.0`, `^22.13.0` oppure `>=24`. Non è presente uno script di test frontend.
+
+## Comportamenti principali
+
+- `AuthContext` mantiene la sessione in React e `localStorage`; Axios e `useSocket` condividono il rinnovo tramite `refreshSession()` nella stessa scheda.
+- `ThemeContext` gestisce il tema chiaro/scuro nello stato React: al reload riparte dal tema chiaro.
+- `CreatePost` invia `FormData` con testo e immagine opzionale da file JPEG/PNG/GIF/WebP fino a 5 MiB oppure da URL. Il backend salva i file in MongoDB e li serve pubblicamente da `/api/v1/uploads/:filename`.
+- `Chat` cerca anche utenti non seguiti, filtrando localmente l'elenco ottenuto da `GET /users`.
+- Messaggi e commenti vengono creati tramite REST e ricevuti via Socket.IO; dopo il join autorizzato si ricarica la cronologia e si deduplica per `_id`.
+
+In produzione il Dockerfile compila la SPA e Nginx la serve con fallback a `index.html`. Il gateway del Compose inoltra API e Socket.IO al backend. Verifica documentale: 28 ottobre 2026.

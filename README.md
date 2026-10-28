@@ -65,7 +65,7 @@ Trovare membri per completare una band, avviare collaborazioni per registrare nu
 
 **JamPulse** è un ecosistema full-stack progettato specificamente per le esigenze dei musicisti. Consente a ciascun artista di:
 - **Esibire la propria identità musicale**: profilo arricchito con bio artistica, strumenti suonati e generi di riferimento.
-- **Social Feed & Content Sharing**: pubblicazione di post con testo e URL immagine opzionale, con sistema di like interattivo nel dettaglio del post.
+- **Social Feed & Content Sharing**: pubblicazione di post con testo e immagine opzionale da URL o dal dispositivo, con sistema di like interattivo nel dettaglio del post.
 - **Commenti e Discussioni Sincrone**: thread di discussione sotto i post con aggiornamento istantaneo real-time per chiunque stia visualizzando il medesimo brano/post.
 - **Messaggistica Privata 1-to-1 Real-Time**: conversazioni persistenti con aggiornamenti dei nuovi messaggi nella chat aperta.
 - **Ricerca Parametrica per Affinità**: motore di ricerca utenti basato su filtri combinati per strumento (es. Batteria, Basso) e genere (es. Jazz, Rock, Funk).
@@ -177,7 +177,7 @@ flowchart TD
 
 ## 🗃️ Modello Concettuale dei Dati & ER Diagram
 
-Il database MongoDB `jampulse` è strutturato in 6 collezioni relazionate tramite `ObjectId` Mongoose:
+Il database MongoDB `jampulse` usa sette modelli: `User`, `Post`, `PostImage`, `Comment`, `Chat`, `Message` e `RefreshToken`. I riferimenti fra le risorse usano `ObjectId`, tranne il collegamento applicativo fra `Post.media` e `PostImage._id`, che usa un URL e un identificativo stringa:
 
 ```mermaid
 erDiagram
@@ -190,6 +190,15 @@ erDiagram
     USER }o--o{ CHAT : "participants"
     POST ||--o{ COMMENT : "contiene (postId)"
     CHAT ||--o{ MESSAGE : "raccoglie (chatID)"
+    POSTIMAGE |o--o{ POST : "URL in media, senza ref Mongoose"
+
+    POSTIMAGE {
+        string _id PK "UUID con estensione"
+        buffer data "required, massimo 5 MiB applicativi"
+        string contentType "JPEG, PNG, GIF o WebP"
+        date createdAt
+        date updatedAt
+    }
 
     REFRESH_TOKEN {
         ObjectId _id PK
@@ -335,7 +344,13 @@ sequenceDiagram
     end
     Note over FE,BE: Il seguito rappresenta il percorso di successo del rinnovo, se necessario
     Auth ->> BE: Token valido, req.user = id e role
-    BE ->> BE: Valida content e crea new Post con autore da req.user.id
+    BE ->> BE: Multer legge multipart in memoria (JSON ancora supportato)
+    BE ->> BE: Valida content, tipo media e alternativa file/URL
+    opt File immagine presente
+        BE ->> BE: Verifica limite 5 MiB e firma JPEG/PNG/GIF/WebP
+        BE ->> DB: PostImage.create con UUID, buffer e contentType
+        DB -->> BE: Immagine salvata, URL /api/v1/uploads/UUID.ext
+    end
     BE ->> DB: newPost.save() con content.trim() e media opzionale
     DB -->> BE: Documento Post salvato
     BE -->> FE: 201 Created + Post senza populate
@@ -346,6 +361,8 @@ sequenceDiagram
     BE -->> FE: 200 OK + feed
     FE -->> Utente: Mostra il feed aggiornato
 ```
+
+Il form invia `FormData` con testo obbligatorio e immagine opzionale: campo `image` per il file oppure `media` per l'URL. Multer accetta un solo file, due campi testuali e tre parti complessive, e filtra il MIME dichiarato. Il servizio verifica la firma iniziale del buffer, senza decodificare l'immagine completa. Il limite è 5 MiB (5 × 1024 × 1024 byte, indicati come 5 MB nella UI); il proxy Nginx ammette body fino a `6m`. Se il post non viene salvato, il controller tenta la rimozione dell'immagine appena creata: non usa una transazione. Quando elimina un post, rimuove il binario solo se nessun altro post usa lo stesso URL. La modifica del campo `media` tramite PUT non ripulisce il binario precedente.
 
 Il controller restituisce 400 se il testo è vuoto; il middleware restituisce 401 per token assenti, scaduti o non validi. Axios valuta il rinnovo sui 401 delle richieste ammesse al retry, senza richiedere il codice `TOKEN_EXPIRED`. `refreshSession()` condivide una sola Promise tra REST e Socket.IO nella stessa scheda. Se una risposta 401 si riferisce a un token già sostituito, Axios ritenta con quello corrente senza un altro refresh. Se manca il Refresh Token o il rinnovo restituisce 401/403 per la sessione corrente, il client pulisce la sessione, aggiorna AuthContext e le route protette riportano al login. Gli errori di rete o del server mantengono i dati della sessione e vengono propagati al chiamante. La lettura e la cancellazione del Refresh Token sono operazioni separate: la rotazione attuale non garantisce il consumo atomico tra schede o client diversi.
 
@@ -452,7 +469,7 @@ Su `connect_error` con `error.data.code === 'TOKEN_EXPIRED'` o su `session_expir
 
 ## 📡 Specifiche Complete API REST
 
-Tutti gli endpoint applicativi (eccetto le rotte di autenticazione e health check) richiedono l'autenticazione tramite Header HTTP:
+Le rotte di autenticazione, il health check e `GET /api/v1/uploads/:filename` sono pubblici. Le altre API applicative richiedono l'autenticazione tramite header HTTP:
 ```http
 Authorization: Bearer <token_jwt>
 ```
@@ -491,7 +508,7 @@ In caso di errore, il backend restituisce un payload JSON standardizzato:
 | Metodo | Endpoint | Accesso | Descrizione | Request / Note |
 |---|---|---|---|---|
 | `GET` | `/` | Autenticato | Feed completo globale | `200` OK con autore popolato (`userID`). |
-| `POST` | `/` | Autenticato | Pubblicazione nuovo post | Body: `{ content, media? }`. `201` Created. |
+| `POST` | `/` | Autenticato | Pubblicazione nuovo post | JSON `{ content, media? }` oppure multipart con `content` e `image` o `media`. File e URL alternativi. `201` Created, `400` Dati/formato non validi, `413` File oltre 5 MiB. |
 | `GET` | `/:id` | Autenticato | Dettaglio singolo post | `200` OK, `404` Non trovato. |
 | `PUT` | `/:id` | Autore Post | Modifica contenuto/media | Body: `{ content, media? }`. `200` OK, `403` Se non autore. |
 | `DELETE` | `/:id` | Autore o **Admin** | Eliminazione post | `200` OK, `403` Non autorizzato. |
@@ -524,6 +541,14 @@ In caso di errore, il backend restituisce un payload JSON standardizzato:
 | Metodo | Endpoint | Accesso | Descrizione | Risposta |
 |---|---|---|---|---|
 | `GET` | `/` | Pubblico | Controllo liveness del server | `200` OK + `{ message: "Server is OK" }` |
+
+### 8. Immagini caricate — `/api/v1/uploads`
+
+| Metodo | Endpoint | Accesso | Descrizione | Risposta |
+|---|---|---|---|---|
+| `GET` | `/:filename` | Pubblico | Legge il binario da `PostImage` | `200` con MIME salvato, `X-Content-Type-Options: nosniff` e cache pubblica di un'ora; `404` per nome non valido o immagine assente. |
+
+Il nome ha forma UUID con estensione `jpg`, `png`, `gif` o `webp`. Non esiste una POST separata per le immagini: il file viene inviato creando il post. `PUT /posts/:id` accetta contenuto e media in JSON, senza upload multipart.
 
 ---
 
@@ -574,12 +599,14 @@ JamPulse/
 │   │   ├── postController.js              # CRUD post e logica toggle like
 │   │   └── userController.js              # Profili, follow, ricerca e moderazione admin
 │   ├── middlewares/
-│   │   └── authMiddleware.js              # Middleware JWT (verifyToken) e RBAC (requireRole)
+│   │   ├── authMiddleware.js              # Middleware JWT (verifyToken) e RBAC (requireRole)
+│   │   └── postUpload.js                  # Multer: file immagine in memoria, limiti e MIME
 │   ├── models/                            # Schemi Mongoose ODM e hook
 │   │   ├── Chat.js                        # Schema conversazione (partecipanti)
 │   │   ├── Comment.js                     # Schema commento collegato a Post e User
 │   │   ├── Message.js                     # Schema messaggio (chatID, senderID, content)
 │   │   ├── Post.js                        # Schema post (userID, content, media, likes)
+│   │   ├── PostImage.js                   # Binari immagini separati, ID stringa UUID con estensione
 │   │   ├── RefreshToken.js                # Schema refresh token con indice TTL automatico
 │   │   └── User.js                        # Schema utente (role, bcrypt hook, followers)
 │   ├── routes/                            # Mappatura endpoint RESTful
@@ -590,6 +617,8 @@ JamPulse/
 │   │   ├── messageRoute.js
 │   │   ├── postRoute.js
 │   │   └── userRoute.js
+│   ├── services/
+│   │   └── postImages.js                  # Salvataggio, lettura, pulizia e migrazione immagini
 │   ├── server.js                          # Bootstrap unificato: Express + Socket.IO + Mongoose
 │   ├── socket.js                          # Handshake JWT e autorizzazione delle room
 │   ├── swagger.js                         # Specifiche OpenAPI 3.0 definite in JavaScript
@@ -641,6 +670,7 @@ JamPulse/
 ├── UI/                                    # Screenshot dimostrativi dell'interfaccia
 ├── Documentazione - Esame/                # Modelli, componenti React e sorgenti dei diagrammi UML
 ├── docker-compose.yml                     # Orchestrazione dei 4 container (mongo, backend, frontend, nginx)
+├── STRUTTURA_PROGETTO.md                   # Analisi dei file, architettura e cronologia
 └── README.md
 ```
 
@@ -648,7 +678,7 @@ JamPulse/
 
 ## 🐳 Guida all'Avvio Rapido con Docker
 
-**Docker Compose** avvia i quattro servizi definiti nel repository. La configurazione attuale permette di usare frontend e API tramite il gateway, ma presenta i limiti di accesso a Socket.IO e Swagger descritti sotto.
+**Docker Compose** avvia i quattro servizi definiti nel repository. Frontend, REST, immagini e Socket.IO sono raggiungibili tramite il gateway; Swagger richiede l'accesso diretto al backend descritto sotto.
 
 ### Prerequisiti
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installato e attivo sulla macchina.
@@ -766,7 +796,7 @@ Il file di configurazione `backend/.env` controlla i parametri operativi del ser
 
 ## 🎸 Database Seeding & Account Demo di Prova
 
-Il progetto include uno script di seeding (`backend/seed.js`) che svuota le collezioni User, Post, Comment, Chat e Message (lasciando invariata RefreshToken) e genera una rete musicale con artisti celebri, post con immagini multimediali, commenti incrociati e chat pre-avviate.
+Il progetto include uno script di seeding (`backend/seed.js`) che svuota le collezioni User, Post, Comment, Chat e Message (lasciando invariati RefreshToken e PostImage) e genera una rete musicale con artisti celebri, post con immagini da URL, commenti incrociati e chat pre-avviate. Eseguirlo soltanto su un database destinato ai dati demo: sostituisce i dati delle cinque collezioni e può lasciare immagini e sessioni senza riferimenti attivi.
 
 Per eseguire il popolamento:
 ```bash
@@ -792,7 +822,7 @@ npm run seed
 
 ## 📖 Documentazione Interattiva Swagger & Health Check
 
-JamPulse include una suite Swagger/OpenAPI 3.0 completamente navigabile che permette di esplorare gli schemi dati e testare ciascun endpoint direttamente dal browser:
+JamPulse include una UI Swagger/OpenAPI 3.0 per consultare e provare le operazioni descritte in `backend/swagger.js`. La specifica documenta il multipart dei post, ma non include il GET delle immagini, le due operazioni amministrative sugli utenti e gli schemi `RefreshToken` e `PostImage`.
 
 - **Con il Compose attuale**: Swagger non è esposto dal gateway. `/api-docs` viene inoltrato alla SPA; anche il server di prova configurato da Swagger (`http://localhost:4000`) richiede un backend raggiungibile dal browser su quella porta.
 - **In Locale**: [http://localhost:4000/api-docs](http://localhost:4000/api-docs)
@@ -841,3 +871,11 @@ Il frontend integra opzioni in `src/utils/musicOptions.js` utilizzate in registr
 ## 📄 Licenza
 
 Il file [LICENSE](LICENSE) contiene la licenza MIT. Il manifest `backend/package.json` riporta ancora `ISC`: questa dichiarazione del pacchetto è discordante con il file di licenza del repository.
+
+## Verifica e documentazione d'esame
+
+Documentazione confrontata con il codice il **28 ottobre 2026**. Per la mappa dettagliata dei file consultare [STRUTTURA_PROGETTO.md](STRUTTURA_PROGETTO.md); per sorgenti, derivati e rigenerazione consultare [STATO_DOCUMENTAZIONE.txt](<Documentazione - Esame/STATO_DOCUMENTAZIONE.txt>). I quattro diagrammi `.txt` contengono PlantUML, utilizzabile anche su PlantText; gli altri due TXT sono relazioni testuali. Le cartelle `old/` e `old 2/` sono archivi storici. DOCX e PNG non sono stati aggiornati in questa revisione.
+
+Il frontend espone `npm run lint` e `npm run build`. Il backend dichiara `npm test` (`node --test tests/*.test.js`), ma nel repository non sono presenti test corrispondenti: lo script non dimostra copertura. Il health check verifica la risposta del processo HTTP e non esegue una query di disponibilità MongoDB. Non è configurato un healthcheck Docker Compose.
+
+Le cancellazioni non hanno cascade generale: eliminare un post non elimina i commenti; eliminare una chat non elimina i messaggi; eliminare un utente non ripulisce post, relazioni sociali e sessioni. L'autorizzazione REST usa il ruolo contenuto nell'access token: un cambio di ruolo non aggiorna i token già emessi. Il refresh genera un token col ruolo corrente, ma non aggiorna l'oggetto `user` del client, quindi il badge e `isAdmin` possono richiedere un nuovo login.

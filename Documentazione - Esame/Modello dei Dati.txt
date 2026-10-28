@@ -1,3 +1,6 @@
+Modello dati di JamPulse
+Verifica sul codice del 28 ottobre 2026. Il database usa sette modelli Mongoose: User, Post, PostImage, Comment, Chat, Message e RefreshToken. I riferimenti sono ObjectId, tranne il collegamento applicativo tramite URL fra Post e PostImage.
+
 1. Modello User (User.js)
 Rappresenta l'utente registrato sulla piattaforma e gestisce sia le informazioni personali che le relazioni sociali di follow e la sicurezza delle credenziali. 
 	username: String (Obbligatorio, Unico) — Nome utente univoco scelto in fase di registrazione. 
@@ -14,7 +17,7 @@ Rappresenta l'utente registrato sulla piattaforma e gestisce sia le informazioni
 Rappresenta i contenuti multimediali o testuali pubblicati dagli utenti all'interno del feed sociale.
 	userID: ObjectId (Obbligatorio, Riferimento a User) — Identificativo dell'autore del post. 
 	content: String (Obbligatorio) — Il testo o la descrizione del post. 
-	media: String (Default: stringa vuota) — Nell'interfaccia contiene l'URL dell'immagine opzionale, visualizzata tramite elementi img. Lo schema accetta una stringa; non sono implementati upload di file o player audio/video.
+	media: String (Default: stringa vuota) — URL dell'immagine opzionale, esterno oppure relativo /api/v1/uploads/<UUID.ext> per un file salvato in PostImage. Il collegamento non usa ref o ObjectId. La creazione accetta JSON o multipart con un file image alternativo a media; l'aggiornamento tramite PUT accetta solo i campi JSON content e media. Non sono presenti player audio/video.
 	likes: Array di ObjectId con riferimento a User (Default: array vuoto) — Elenco degli utenti che hanno messo "mi piace" al post (gestito tramite logica di toggle). 
 	timestamps: Gestito automaticamente (createdAt, updatedAt) per ordinare il feed dal più recente al più vecchio. 
 3. Modello Comment (Comment.js)
@@ -39,6 +42,16 @@ Rappresenta le sessioni persistenti di autenticazione per l'implementazione dell
 	user: ObjectId (Obbligatorio, Riferimento a User) — Riferimento all'utente proprietario della sessione.
 	expiresAt: Date (Obbligatorio) — Data e ora di scadenza ricavata dal claim exp del JWT e impostata dal controller. La durata predefinita è 7 giorni, configurabile tramite JWT_REFRESH_EXPIRES_IN; non è un default dello schema. È associata a un indice Time-To-Live (TTL) di MongoDB ({ expireAfterSeconds: 0 }) che elimina i record scaduti tramite un processo periodico in background, senza cron job applicativi. La verifica della scadenza del JWT non dipende dai tempi di rimozione del record.
 	createdAt: Date (Default: Date.now) — Data e ora di creazione della sessione nel database.
+7. Modello PostImage (PostImage.js)
+Conserva le immagini caricate nella collezione postimages, separata da posts per evitare di leggere i binari nel feed.
+	_id: String (Obbligatorio) — Nome UUID generato dal server con estensione jpg, png, gif o webp.
+	data: Buffer (Obbligatorio) — Contenuto binario. Il limite applicativo è 5 MiB (5 × 1024 × 1024 byte); non è un validatore dello schema.
+	contentType: String (Obbligatorio, enum: image/jpeg, image/png, image/gif, image/webp) — MIME ricavato dal formato riconosciuto dalla firma iniziale del file. Non viene decodificata l'immagine completa.
+	timestamps: Gestito automaticamente (createdAt, updatedAt).
+Il middleware Multer usa memoryStorage e accetta un file, due campi testuali e tre parti multipart. Il controller valida testo, tipo di media e alternativa file/URL prima del salvataggio del binario. La lettura GET /api/v1/uploads/:filename è pubblica, con nosniff e cache di un'ora. Un nome non conforme o un binario assente restituisce 404.
+PostImage e Post sono salvati separatamente: in caso di errore nel salvataggio del post viene tentata la rimozione dell'immagine appena creata. Quando elimina un post, il controller rimuove il binario solo se nessun altro post usa lo stesso media; non c'è transazione. Cambiare media tramite PUT non elimina il binario precedente.
+All'avvio migrateLocalPostImages importa solo i file locali di backend/uploads referenziati dai post e non già presenti in MongoDB; mantiene URL e originali. Il volume Docker post_uploads serve alla migrazione, mentre i nuovi file sono nel database. Installazioni collegate a database distinti non condividono le immagini.
+
 Schema delle Relazioni (Riepilogo)
 	User ↔ User (Social Graph): Relazione riflessiva a molti-a-molti tramite gli array followers e following. 
 	User → Post: Relazione uno-a-molti (un utente può creare molteplici post). 
@@ -49,3 +62,10 @@ Schema delle Relazioni (Riepilogo)
 	User ↔ Chat: Relazione molti-a-molti tramite l'array di participants. 
 	Chat → Message: Relazione uno-a-molti (una chat contiene una sequenza di messaggi). 
 	User → RefreshToken: Relazione uno-a-molti (un utente può possedere più sessioni/token attivi su diversi dispositivi).
+	PostImage → Post: Un binario può essere riutilizzato da più post attraverso lo stesso URL media; un post può anche non avere immagine o usare un URL esterno. Non esiste vincolo referenziale Mongoose.
+
+Vincoli applicativi e limiti
+Le scelte strumenti/generi del frontend non sono enum del modello User. La registrazione normalizza email in minuscolo e username con trim; lo schema non impone questa normalizzazione.
+La rotazione dei Refresh Token legge e cancella il record con operazioni separate: non garantisce consumo atomico fra client concorrenti. Il ruolo REST proviene dall'Access Token e resta quello emesso fino al rinnovo o alla scadenza.
+Non sono presenti cascade generali: eliminare un utente non elimina post, commenti, messaggi, relazioni follow e Refresh Token; eliminare un post non elimina i commenti; eliminare una chat non elimina i messaggi.
+Il seed svuota User, Post, Comment, Chat e Message, ma conserva RefreshToken e PostImage e può lasciare record senza riferimenti attivi.
