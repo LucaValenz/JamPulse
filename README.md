@@ -23,6 +23,19 @@
 
 ---
 
+## Immagini caricate: salvataggio in MongoDB
+
+Gli upload fino a 5 MB sono salvati come binari nella collezione `postimages`, separata dai post. Il campo `media` del post mantiene l'URL relativo `/api/v1/uploads/<nome>`; il backend legge il contenuto da MongoDB. Le immagini sono quindi disponibili da tutte le installazioni collegate allo stesso database tramite `MONGO_URI`. Due MongoDB locali distinti, anche con lo stesso nome del database, non condividono i dati.
+
+Per applicare l'aggiornamento al backend Docker:
+
+```sh
+docker compose up -d --build backend
+docker compose logs backend
+```
+
+Eseguire prima sul PC che conserva gli upload originali: dopo la connessione al DB il backend importa automaticamente i file usati dai post da `backend/uploads` (in Docker, il volume `post_uploads`). L'importazione mantiene gli URL, può essere ripetuta e non cancella i file originali. I log segnalano file importati, mancanti o non validi. I file mancanti devono essere recuperati dal PC/volume originale; i soli percorsi nel database non permettono di ricostruirli. Il volume precedente rimane montato per consentire questa migrazione; i nuovi upload non lo utilizzano.
+
 ## 📋 Indice dei Contenuti
 
 1. [Panoramica e Value Proposition](#-panoramica-e-value-proposition)
@@ -88,7 +101,7 @@ Di seguito una panoramica visiva delle schermate principali dell'applicazione:
 |---|---|
 | **Autenticazione & Sessioni** | Architettura **Dual-Token**: Access Token (default 15m) + Refresh Token (default 7d) persistito su MongoDB con indice TTL. REST e Socket.IO condividono `refreshSession()` e una Promise di rinnovo nella scheda corrente; i token ruotano con claim `jti` e il Refresh Token viene revocato al logout. AuthContext viene sincronizzato tramite `session-changed`. Refresh Token assente o rinnovo rifiutato con 401/403 causano la pulizia della sessione; gli errori temporanei mantengono i dati locali. |
 | **Controllo Accessi (RBAC)** | Distinzione tra ruolo `user` e `admin`. Gli amministratori possiedono badge visivi dedicati, possono moderare ed eliminare post e commenti altrui, eliminare altri account e promuovere/declassare ruoli tramite API dedicate, senza un pannello amministrativo frontend. |
-| **Feed & Gestione Post** | Creazione ed eliminazione di post con testo e immagine da URL oppure dal dispositivo (JPG, PNG, GIF e WebP, massimo 5 MB), con anteprima del file selezionato. I file sono salvati in `backend/uploads`, serviti da `/api/v1/uploads` e conservati nel volume Docker `post_uploads`. Feed ordinato per data decrescente e Like/Unlike nel dettaglio. La modifica del post è disponibile tramite API; le card del feed mostrano il conteggio dei like. |
+| **Feed & Gestione Post** | Creazione ed eliminazione di post con testo e immagine da URL oppure dal dispositivo (JPG, PNG, GIF e WebP, massimo 5 MB), con anteprima del file selezionato. Le immagini caricate sono salvate come dati binari nella collezione MongoDB `postimages` e servite da `/api/v1/uploads`. Feed ordinato per data decrescente e Like/Unlike nel dettaglio. La modifica del post è disponibile tramite API; le card del feed mostrano il conteggio dei like. |
 | **Commenti Real-Time** | Aggiunta ed eliminazione dei commenti dalla UI; modifica tramite API. I nuovi commenti arrivano via Socket.IO agli utenti iscritti alla room del post. Modifiche e cancellazioni non vengono trasmesse in real-time. |
 | **Chat Privata Istantanea** | Conversazioni private 1-to-1 con storico messaggi. Invio tramite REST autenticata e ricezione real-time nelle room Socket.IO `chat_<chatId>`, accessibili solo ai partecipanti. |
 | **Social Graph (Follow/Unfollow)** | Possibilità di seguire e smettere di seguire altri artisti, aggiornando le metriche social del profilo e la lista degli utenti seguiti. |

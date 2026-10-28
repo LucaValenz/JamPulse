@@ -1,10 +1,15 @@
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { mkdir, writeFile, unlink } = require('node:fs/promises');
+const { readFile, stat } = require('node:fs/promises');
+const PostImage = require('../models/PostImage');
+const Post = require('../models/Post');
 
 // Percorso assoluto indipendente dalla cartella da cui viene avviato Node.
-// In Docker questa directory è montata sul volume persistente post_uploads.
+// Usata solo per importare gli upload precedenti dal volume post_uploads.
 const uploadDirectory = path.join(__dirname, '..', 'uploads');
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const filenamePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|gif|webp)$/;
+const contentTypes = { jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
 // Salviamo nel database un URL relativo: resta valido cambiando dominio o porta.
 // Il prefisso /api permette di usare i proxy Vite e Nginx già configurati.
 const mediaPrefix = '/api/v1/uploads/';
@@ -27,6 +32,9 @@ function imageExtension(buffer) {
 
 /** Salva il buffer ricevuto da Multer e restituisce l'URL da associare al post. */
 async function savePostImage(file) {
+    if (file.buffer.length > MAX_IMAGE_SIZE) {
+        throw Object.assign(new Error("L'immagine non può superare 5 MB."), { status: 413 });
+    }
     // L'estensione deriva dal contenuto, mai dal nome fornito dall'utente.
     const extension = imageExtension(file.buffer);
     if (!extension) {
@@ -35,10 +43,7 @@ async function savePostImage(file) {
     }
     // Un nome generato dal server evita collisioni e percorsi scelti dal client.
     const filename = `${randomUUID()}.${extension}`;
-    // recursive consente anche il primo upload, quando uploads non esiste ancora.
-    await mkdir(uploadDirectory, { recursive: true });
-    // wx crea un file nuovo e fallisce se esiste già, senza sovrascriverlo.
-    await writeFile(path.join(uploadDirectory, filename), file.buffer, { flag: 'wx' });
+    await PostImage.create({ _id: filename, data: file.buffer, contentType: contentTypes[extension] });
     return mediaPrefix + filename;
 }
 
@@ -52,14 +57,65 @@ async function removePostImage(media) {
     if (typeof media !== 'string' || !media.startsWith(mediaPrefix)) return;
     const filename = media.slice(mediaPrefix.length);
     // Accettiamo solo la forma dei nomi generati qui: niente slash o segmenti ../.
-    if (!/^[0-9a-f-]{36}\.(jpg|png|gif|webp)$/.test(filename)) return;
+    if (!filenamePattern.test(filename)) return;
     try {
-        await unlink(path.join(uploadDirectory, filename));
+        await PostImage.deleteOne({ _id: filename });
     } catch (error) {
-        // Un file già assente non è un errore. Gli altri problemi vengono registrati
-        // senza interrompere la risposta di errore o la cancellazione del post.
-        if (error.code !== 'ENOENT') console.error('Errore nella rimozione dell’immagine:', error);
+        // La pulizia non deve nascondere l'errore originario del controller.
+        console.error('Errore nella rimozione dell’immagine:', error);
     }
 }
 
-module.exports = { uploadDirectory, mediaPrefix, savePostImage, removePostImage };
+// Pubblica come il feed: gli elementi img non inviano il JWT di Axios.
+async function servePostImage(req, res, next) {
+    if (!filenamePattern.test(req.params.filename)) {
+        return res.status(404).json({ message: 'Immagine non trovata' });
+    }
+    try {
+        const image = await PostImage.findById(req.params.filename);
+        if (!image) return res.status(404).json({ message: 'Immagine non trovata' });
+        res.set('X-Content-Type-Options', 'nosniff');
+        res.set('Cache-Control', 'public, max-age=3600');
+        res.type(image.contentType).send(Buffer.from(image.data));
+    } catch (error) {
+        next(error);
+    }
+}
+
+// Importazione ripetibile: conserva URL e file originali, senza sovrascrivere il DB.
+// I file mancanti su un nuovo PC non impediscono l'avvio del sito.
+async function migrateLocalPostImages(directory = uploadDirectory) {
+    const mediaUrls = await Post.distinct('media', { media: { $regex: '^/api/v1/uploads/' } });
+    const result = { imported: 0, missing: 0, invalid: 0 };
+    for (const media of mediaUrls) {
+        const filename = media.slice(mediaPrefix.length);
+        if (!filenamePattern.test(filename)) continue;
+        if (await PostImage.exists({ _id: filename })) continue;
+        let buffer;
+        try {
+            const source = path.join(directory, filename);
+            const info = await stat(source);
+            if (!info.isFile() || info.size > MAX_IMAGE_SIZE) {
+                result.invalid++;
+                continue;
+            }
+            buffer = await readFile(source);
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            result.missing++;
+            continue;
+        }
+        const extension = imageExtension(buffer);
+        if (!extension || buffer.length > MAX_IMAGE_SIZE) {
+            result.invalid++;
+            continue;
+        }
+        const update = await PostImage.updateOne({ _id: filename }, {
+            $setOnInsert: { data: buffer, contentType: contentTypes[extension] }
+        }, { upsert: true });
+        result.imported += update.upsertedCount;
+    }
+    return result;
+}
+
+module.exports = { mediaPrefix, savePostImage, removePostImage, servePostImage, migrateLocalPostImages };

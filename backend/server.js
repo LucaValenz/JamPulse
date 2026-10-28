@@ -31,7 +31,7 @@ const commentRoute = require('./routes/commentRoute');
 const messageRoute = require('./routes/messageRoute');
 const healthRoute = require('./routes/healthRoute');
 const verifyToken = require('./middlewares/authMiddleware');
-const { uploadDirectory, mediaPrefix } = require('./services/postImages');
+const { mediaPrefix, servePostImage, migrateLocalPostImages } = require('./services/postImages');
 
 // * CREIAMO L'APPLICAZIONE EXPRESS -----------------------------------------------------------------------------------------------------------------------------------------------------------
 const app = express();
@@ -74,13 +74,7 @@ app.use('/api/v1/auth', authRoute); // ! questo serve per utilizzare le rotte di
 // Le immagini dei post sono pubbliche come le immagini esterne già presenti nel feed.
 // Questa rotta precede verifyToken perché gli elementi <img> non inviano il JWT
 // aggiunto dall'interceptor Axios. La creazione del post resta autenticata.
-app.use(mediaPrefix, express.static(uploadDirectory, {
-    index: false, // Non cercare un file index nelle directory richieste.
-    dotfiles: 'deny', // Non esporre eventuali file nascosti presenti nella cartella.
-    fallthrough: false, // Un file assente restituisce 404 senza passare alle rotte protette.
-    // Il browser deve rispettare il tipo del file senza tentare di reinterpretarlo.
-    setHeaders(res) { res.setHeader('X-Content-Type-Options', 'nosniff'); }
-}));
+app.get(`${mediaPrefix}:filename`, servePostImage);
 app.use(verifyToken);
 app.use('/api/v1/chats', chatRoute); // ! questo serve per utilizzare le rotte dei chat
 app.use('/api/v1/posts', postRoute); // ! questo serve per utilizzare le rotte dei post
@@ -107,7 +101,12 @@ app.use((err, req, res, next) => {
 
 // * CONNESSIONE AL DATABASE E AVVIO DEL SERVER ----------------------------------------------------------------------------------------------------------------------------------------------
 mongoose.connect(process.env.MONGO_URI) // ! questo serve per connettersi al database MongoDB utilizzando l'URI definito nelle variabili d'ambiente
-    .then(() => {
+    .then(async () => {
+        const migration = await migrateLocalPostImages();
+        if (migration.imported) console.log(`Immagini importate in MongoDB: ${migration.imported}`);
+        if (migration.missing || migration.invalid) {
+            console.warn(`Importazione immagini: ${migration.missing} file mancanti, ${migration.invalid} non validi. Avviare anche sul PC con gli upload originali.`);
+        }
         // ! NOVITÀ: ora facciamo ascoltare httpServer invece di app.
         // ! È lo stesso risultato finale, ma httpServer include anche il supporto WebSocket di Socket.IO.
         httpServer.listen(process.env.PORT, () => {

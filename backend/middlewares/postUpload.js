@@ -5,7 +5,7 @@ const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const imageTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 // Il buffer rimane in memoria finché il controller non valida i dati del post.
-// In questo modo un form non valido non lascia subito file inutilizzati su disco.
+// In questo modo un form non valido non lascia immagini inutilizzate nel DB.
 const upload = multer({
     storage: multer.memoryStorage(),
     // Una sola immagine e al massimo i campi testuali content e media.

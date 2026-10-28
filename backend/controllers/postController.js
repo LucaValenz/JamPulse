@@ -1,6 +1,6 @@
 const Post = require('../models/Post')
 const User = require('../models/User')
-// La gestione dei file resta separata dalla persistenza dei documenti MongoDB.
+// I binari sono conservati in una collezione MongoDB separata dai post.
 const { savePostImage, removePostImage } = require('../services/postImages')
 
 // GET /posts
@@ -72,7 +72,7 @@ async function createPost(req, res) {
         if (req.file && media?.trim()) {
             return res.status(400).json({ message: 'Scegli un file oppure un URL immagine.' })
         }
-        // Scriviamo su disco solo dopo aver validato i campi testuali.
+        // Salviamo l'immagine in MongoDB dopo aver validato i campi testuali.
         if (req.file) uploadedMedia = await savePostImage(req.file)
 
         // Creiamo il documento Post con i dati del body e l'ID dell'autore dal token
@@ -156,7 +156,7 @@ async function deletePost(req, res) {
 
         await Post.findByIdAndDelete(req.params.id)
         // Dopo la cancellazione controlliamo se altri post riutilizzano l'immagine.
-        // removePostImage ignora gli URL esterni e rimuove solo i nostri file locali.
+        // removePostImage ignora gli URL esterni e rimuove solo i nostri binari.
         if (!await Post.exists({ media: post.media })) await removePostImage(post.media)
 
         res.json({ message: 'Post eliminato con successo' })

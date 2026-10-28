@@ -12,7 +12,7 @@ services:
     build: ./backend
     restart: always
     env_file: ./backend/.env
-    # Conserva le immagini anche quando il container backend viene ricreato.
+    # Mantiene gli upload precedenti disponibili per l'importazione in MongoDB.
     volumes:
       - post_uploads:/app/uploads
     depends_on:
@@ -35,5 +35,5 @@ services:
 
 volumes:
   mongo_data:
-  # Archivio dei file, separato dal volume dei documenti MongoDB.
+  # Solo archivio precedente: i nuovi upload vengono salvati in MongoDB.
   post_uploads:
