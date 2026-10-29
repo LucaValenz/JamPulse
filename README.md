@@ -670,7 +670,6 @@ JamPulse/
 ├── UI/                                    # Screenshot dimostrativi dell'interfaccia
 ├── Documentazione - Esame/                # Modelli, componenti React e sorgenti dei diagrammi UML
 ├── docker-compose.yml                     # Orchestrazione dei 4 container (mongo, backend, frontend, nginx)
-├── STRUTTURA_PROGETTO.md                   # Analisi dei file, architettura e cronologia
 └── README.md
 ```
 
@@ -874,7 +873,7 @@ Il file [LICENSE](LICENSE) contiene la licenza MIT. Il manifest `backend/package
 
 ## Verifica e documentazione d'esame
 
-Documentazione confrontata con il codice il **28 ottobre 2026**, incluso l'aggiornamento di `backend/swagger.js`. Per la mappa dettagliata dei file consultare [STRUTTURA_PROGETTO.md](STRUTTURA_PROGETTO.md); i sorgenti e i documenti derivati sono nella cartella [Documentazione - Esame](<Documentazione - Esame/>). I quattro diagrammi `.txt` contengono PlantUML, utilizzabile anche su PlantText; gli altri due TXT sono relazioni testuali. Per rigenerare le immagini dei diagrammi, utilizzare i rispettivi sorgenti PlantUML. Le cartelle `old/` e `old 2/` sono archivi storici. DOCX e PNG non sono stati aggiornati in questa revisione.
+Documentazione confrontata con il codice il **28 ottobre 2026**, incluso l'aggiornamento di `backend/swagger.js`. I sorgenti e i documenti derivati sono nella cartella [Documentazione - Esame](<Documentazione - Esame/>). I quattro diagrammi `.txt` contengono PlantUML, utilizzabile anche su PlantText; gli altri due TXT sono relazioni testuali. Per rigenerare le immagini dei diagrammi, utilizzare i rispettivi sorgenti PlantUML. Le cartelle `old/` e `old 2/` sono archivi storici. DOCX e PNG non sono stati aggiornati in questa revisione.
 
 Il frontend espone `npm run lint` e `npm run build`. Il backend dichiara `npm test` (`node --test tests/*.test.js`), ma nel repository non sono presenti test corrispondenti: lo script non dimostra copertura. Il health check verifica la risposta del processo HTTP e non esegue una query di disponibilità MongoDB. Non è configurato un healthcheck Docker Compose.
 

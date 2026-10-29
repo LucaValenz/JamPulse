@@ -1,6 +1,6 @@
 # Frontend JamPulse
 
-SPA React con Material UI, React Router, Axios e Socket.IO. Per architettura, API, configurazione Docker e account demo consultare il [README principale](../README.md) e la [struttura del progetto](../STRUTTURA_PROGETTO.md).
+SPA React con Material UI, React Router, Axios e Socket.IO. Per architettura, API, configurazione Docker e account demo consultare il [README principale](../README.md).
 
 ## Sviluppo locale
 
