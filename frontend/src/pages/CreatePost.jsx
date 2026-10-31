@@ -72,73 +72,77 @@ export default function CreatePost() {
     }
 
     return (
-        <Stack sx={{ minHeight: '100%', justifyContent: 'center', alignItems: 'center', py: 3 }}>
-            <Card sx={{ width: '80%', borderRadius: 5, p: { xs: 3, sm: 5 } }}>
+        // Limita la scheda allo spazio disponibile, includendo il padding nell'altezza.
+        <Stack sx={{ height: '100%', maxHeight: '100dvh', minHeight: 0, boxSizing: 'border-box', justifyContent: 'center', alignItems: 'center', py: { xs: 2, sm: 3 } }}>
+            <Card sx={{ width: { xs: '95%', sm: '80%' }, maxHeight: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', borderRadius: 5, p: { xs: 2, sm: 5 } }}>
                 {/* Stack genera un form HTML, mantenendo invio e validazione nativi. */}
-                <Stack spacing={3} component="form" onSubmit={handleSubmit}>
-                    <Typography variant="h5" align="center" color="primary" sx={{ fontWeight: 'bold' }}>
-                        Crea un nuovo post
-                    </Typography>
-
-                    {/* Qui compaiono sia gli errori locali sia quelli restituiti dall'API. */}
-                    {error && <Alert severity="error">{error}</Alert>}
-
-                    <TextField
-                        label="Scrivi la descrizione del post"
-                        multiline
-                        minRows={4}
-                        fullWidth
-                        required
-                        disabled={loading}
-                        value={content}
-                        onChange={event => setContent(event.target.value)}
-                    />
-
-                    {/* La label apre l'input file nascosto. accept filtra il selettore,
-                        mentre handleImageChange e il backend verificano i file ricevuti. */}
-                    <Stack spacing={1}>
-                        <Button component="label" variant="outlined" disabled={loading}>
-                            {image ? 'Cambia immagine' : 'Carica immagine dal dispositivo'}
-                            <input
-                                type="file"
-                                accept={IMAGE_TYPES.join(',')}
-                                hidden
-                                disabled={loading}
-                                onChange={handleImageChange}
-                            />
-                        </Button>
-                        <Typography variant="caption" color="text.secondary">
-                            Immagine opzionale · JPG, PNG, GIF o WebP · Massimo 5 MB
+                <Stack spacing={3} component="form" onSubmit={handleSubmit} sx={{ minHeight: 0 }}>
+                    {/* Scorrono solo i campi e l'anteprima: il pulsante resta sempre visibile. */}
+                    <Stack spacing={3} sx={{ minHeight: 0, overflowY: 'auto' }}>
+                        <Typography variant="h5" align="center" color="primary" sx={{ fontWeight: 'bold' }}>
+                            Crea un nuovo post
                         </Typography>
-                        {/* L'anteprima usa il file locale senza chiamare il server. */}
-                        {image && (
-                            <>
-                                <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{image.file.name}</Typography>
-                                <Box
-                                    component="img"
-                                    src={image.preview}
-                                    alt="Anteprima dell’immagine selezionata"
-                                    sx={{ maxHeight: 320, maxWidth: '100%', objectFit: 'contain', borderRadius: 2 }}
+
+                        {/* Qui compaiono sia gli errori locali sia quelli restituiti dall'API. */}
+                        {error && <Alert severity="error">{error}</Alert>}
+
+                        <TextField
+                            label="Scrivi la descrizione del post"
+                            multiline
+                            minRows={4}
+                            fullWidth
+                            required
+                            disabled={loading}
+                            value={content}
+                            onChange={event => setContent(event.target.value)}
+                        />
+
+                        {/* La label apre l'input file nascosto. accept filtra il selettore,
+                            mentre handleImageChange e il backend verificano i file ricevuti. */}
+                        <Stack spacing={1}>
+                            <Button component="label" variant="outlined" disabled={loading}>
+                                {image ? 'Cambia immagine' : 'Carica immagine dal dispositivo'}
+                                <input
+                                    type="file"
+                                    accept={IMAGE_TYPES.join(',')}
+                                    hidden
+                                    disabled={loading}
+                                    onChange={handleImageChange}
                                 />
-                                <Button disabled={loading} onClick={() => setImage(null)}>Rimuovi immagine</Button>
-                            </>
-                        )}
+                            </Button>
+                            <Typography variant="caption" color="text.secondary">
+                                Immagine opzionale · JPG, PNG, GIF o WebP · Massimo 5 MB
+                            </Typography>
+                            {/* L'anteprima usa il file locale senza chiamare il server. */}
+                            {image && (
+                                <>
+                                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{image.file.name}</Typography>
+                                    <Box
+                                        component="img"
+                                        src={image.preview}
+                                        alt="Anteprima dell’immagine selezionata"
+                                        sx={{ maxHeight: 320, maxWidth: '100%', objectFit: 'contain', borderRadius: 2 }}
+                                    />
+                                    <Button disabled={loading} onClick={() => setImage(null)}>Rimuovi immagine</Button>
+                                </>
+                            )}
+                        </Stack>
+
+                        {/* L'URL resta disabilitato finché è presente un file, evitando ambiguità. */}
+                        <TextField
+                            label="Oppure inserisci un URL immagine"
+                            type="url"
+                            fullWidth
+                            disabled={loading || Boolean(image)}
+                            value={media}
+                            onChange={event => setMedia(event.target.value)}
+                            placeholder="https://esempio.com/foto.jpg"
+                            helperText={image ? 'Rimuovi il file selezionato per utilizzare un URL.' : 'Opzionale'}
+                        />
                     </Stack>
 
-                    {/* L'URL resta disabilitato finché è presente un file, evitando ambiguità. */}
-                    <TextField
-                        label="Oppure inserisci un URL immagine"
-                        type="url"
-                        fullWidth
-                        disabled={loading || Boolean(image)}
-                        value={media}
-                        onChange={event => setMedia(event.target.value)}
-                        placeholder="https://esempio.com/foto.jpg"
-                        helperText={image ? 'Rimuovi il file selezionato per utilizzare un URL.' : 'Opzionale'}
-                    />
-
                     {/* Blocca invii vuoti o ripetuti e mostra l'attesa della risposta. */}
-                    <Button type="submit" variant="contained" size="large" disabled={loading || !content.trim()}>
+                    <Button type="submit" variant="contained" size="large" sx={{ flexShrink: 0 }} disabled={loading || !content.trim()}>
                         {loading ? <CircularProgress size={24} color="inherit" /> : 'Condividi il post'}
                     </Button>
                 </Stack>
